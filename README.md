@@ -1,2 +1,2 @@
 # ProductInsight-Agent
-【AI 全栈项目挑战赛】Productinsight-Agent
+【竞品分析】Productinsight-Agent
