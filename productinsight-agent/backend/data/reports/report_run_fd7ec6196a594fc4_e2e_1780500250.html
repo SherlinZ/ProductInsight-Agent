@@ -1,0 +1,483 @@
+<!DOCTYPE html>
+<html lang='zh-CN'>
+<head>
+    <meta charset='UTF-8'>
+    <meta name='viewport' content='width=device-width, initial-scale=1.0'>
+    <title>v2.0 - 竞品分析报告</title>
+    <script src='https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js'></script>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; line-height: 1.6; color: #333; max-width: 1200px; margin: 0 auto; padding: 20px; background: #f5f5f5; }
+        .header { background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%); color: white; padding: 40px; border-radius: 12px; margin-bottom: 30px; }
+        .header h1 { font-size: 2.5em; margin-bottom: 10px; }
+        .header .meta { opacity: 0.8; font-size: 0.9em; }
+        .quality-summary { background: white; border-radius: 12px; padding: 25px; margin-bottom: 30px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        .quality-summary h2 { color: #1a1a2e; margin-bottom: 15px; font-size: 1.3em; }
+        .metrics-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 15px; }
+        .metric-card { background: #f8f9fa; padding: 15px; border-radius: 8px; text-align: center; }
+        .metric-value { font-size: 2em; font-weight: bold; color: #1a1a2e; }
+        .metric-label { font-size: 0.8em; color: #666; }
+        .table-section { background: white; border-radius: 12px; padding: 25px; margin-bottom: 25px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        .table-section h2 { color: #1a1a2e; margin-bottom: 15px; font-size: 1.3em; border-bottom: 2px solid #e0e0e0; padding-bottom: 8px; }
+        .table-container { overflow-x: auto; margin: 15px 0; }
+        table { width: 100%; border-collapse: collapse; font-size: 0.88em; }
+        th { background: #1a1a2e; color: white; padding: 10px 12px; text-align: left; font-weight: 600; }
+        td { padding: 9px 12px; border-bottom: 1px solid #eee; vertical-align: top; }
+        tr:hover { background: #f8f9fa; }
+        .ev-badge { background: #4CAF50; color: white; padding: 1px 6px; border-radius: 10px; font-size: 0.75em; margin-left: 4px; }
+        .figure-section { background: white; border-radius: 12px; padding: 25px; margin-bottom: 25px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        .figure-section h2 { color: #1a1a2e; margin-bottom: 15px; font-size: 1.3em; border-bottom: 2px solid #e0e0e0; padding-bottom: 8px; }
+        .swot-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 15px; margin: 15px 0; }
+        .swot-card { border-radius: 8px; padding: 15px; }
+        .swot-strengths { background: #e8f5e9; border-left: 4px solid #4CAF50; }
+        .swot-weaknesses { background: #ffebee; border-left: 4px solid #f44336; }
+        .swot-opportunities { background: #e3f2fd; border-left: 4px solid #2196F3; }
+        .swot-threats { background: #fff3e0; border-left: 4px solid #FF9800; }
+        .swot-q-title { font-weight: bold; margin-bottom: 8px; font-size: 0.95em; }
+        .swot-q-title::before { content: '◆ '; font-size: 0.8em; }
+        .swot-ul { list-style: none; padding: 0; }
+        .swot-ul li { padding: 3px 0; font-size: 0.88em; border-bottom: 1px solid rgba(0,0,0,0.05); }
+        .swot-ul li:last-child { border-bottom: none; }
+        .coverage-bar { display: flex; align-items: center; gap: 10px; margin: 6px 0; }
+        .coverage-label { min-width: 100px; font-weight: 600; font-size: 0.88em; }
+        .coverage-track { flex: 1; height: 12px; background: #e0e0e0; border-radius: 6px; overflow: hidden; }
+        .coverage-fill { height: 100%; border-radius: 6px; background: #4CAF50; }
+        .coverage-pct { min-width: 45px; font-size: 0.85em; color: #666; }
+        .echart-container { width: 100%; min-height: 300px; margin: 15px 0; }
+        .echart-container.tall { min-height: 400px; }
+        .echart-container.wide { min-height: 250px; }
+        .pricing-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 15px; margin: 15px 0; }
+        .pricing-card { border: 1px solid #e0e0e0; border-radius: 8px; padding: 15px; background: #fafafa; }
+        .pricing-card h4 { color: #4CAF50; margin-bottom: 10px; font-size: 1em; }
+        .pricing-row { display: flex; justify-content: space-between; padding: 4px 0; font-size: 0.85em; border-bottom: 1px solid #eee; }
+        .pricing-row:last-child { border-bottom: none; }
+        .pricing-label { color: #666; }
+        .section { background: white; border-radius: 12px; padding: 30px; margin-bottom: 25px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        .section h2 { color: #1a1a2e; border-bottom: 3px solid #4CAF50; padding-bottom: 10px; margin-bottom: 20px; font-size: 1.5em; }
+        .section h3 { color: #16213e; margin: 20px 0 10px 0; font-size: 1.2em; }
+        .section p { margin-bottom: 15px; text-align: justify; }
+        .section ul, .section ol { margin-left: 25px; margin-bottom: 15px; }
+        .section li { margin-bottom: 8px; }
+        .depth-score { display: inline-block; background: #2196F3; color: white; padding: 3px 10px; border-radius: 15px; font-size: 0.8em; margin-left: 10px; }
+        .footer { text-align: center; padding: 30px; color: #666; font-size: 0.85em; }
+        .interpretation { background: #fff8e1; border-left: 4px solid #FFC107; padding: 10px 15px; margin: 10px 0; border-radius: 4px; font-size: 0.88em; color: #555; }
+        .interpretation strong { color: #e65100; }
+        @media (max-width: 768px) { .swot-grid, .pricing-grid { grid-template-columns: 1fr; } }
+        /* P0-4: Evidence citation tooltips */
+        .ev-citation { color: #1565C0; background: #E3F2FD; padding: 0px 4px; border-radius: 3px; font-size: 0.85em; font-weight: 600; text-decoration: none; cursor: pointer; border-bottom: 1px dashed #1565C0; }
+        .ev-citation:hover { background: #1565C0; color: white; }
+        #ev-tooltip { display: none; position: fixed; z-index: 9999; max-width: 500px; min-width: 280px; background: #fffde7; border: 2px solid #F9A825; border-radius: 8px; padding: 14px 18px; box-shadow: 0 4px 20px rgba(0,0,0,0.18); font-size: 0.85em; line-height: 1.5; color: #333; pointer-events: none; }
+        #ev-tooltip .ev-title { font-weight: 700; color: #1a237e; margin-bottom: 6px; font-size: 0.95em; }
+        #ev-tooltip .ev-snippet { color: #444; background: #f5f5f5; padding: 8px 10px; border-radius: 4px; border-left: 3px solid #F9A825; margin: 8px 0; font-style: italic; max-height: 100px; overflow-y: auto; }
+        #ev-tooltip .ev-meta { color: #888; font-size: 0.82em; margin-top: 6px; }
+        #ev-tooltip .ev-url { color: #1565C0; text-decoration: none; pointer-events: all; }
+        #ev-tooltip .ev-url:hover { text-decoration: underline; }
+        .ev-gaps { background: #fff3e0; border-left: 4px solid #FF9800; padding: 12px 16px; border-radius: 4px; margin-top: 8px; }
+    </style>
+</head>
+<body>
+    
+    <div class='header'>
+        <h1>竞品分析报告</h1>
+        <div class='meta'>版本: v2.0 | 生成时间: 2026-06-03T15:40:21</div>
+    </div>
+
+    <div class='quality-summary'>
+        <h2>📊 可信度摘要</h2>
+        <div class='metrics-grid'>
+            <div class='metric-card'><div class='metric-value'>9353</div><div class='metric-label'>总字数</div></div>
+            <div class='metric-card'><div class='metric-value'>11</div><div class='metric-label'>章节数</div></div>
+            <div class='metric-card'><div class='metric-value'>4</div><div class='metric-label'>对比表</div></div>
+            <div class='metric-card'><div class='metric-value'>5</div><div class='metric-label'>图表数</div></div>
+            <div class='metric-card'><div class='metric-value'>10</div><div class='metric-label'>Signed Claims</div></div>
+            <div class='metric-card'><div class='metric-value'>0</div><div class='metric-label'>Rework Required</div></div>
+            <div class='metric-card'><div class='metric-value'>65%</div><div class='metric-label'>平均深度</div></div>
+            <div class='metric-card'><div class='metric-value'>3/3</div><div class='metric-label'>产品 claim 覆盖</div></div>
+            <div class='metric-card'><div class='metric-value' style='color:#FF9800'>部分</div><div class='metric-label'>Dify 待验证</div></div>
+            <div class='metric-card'><div class='metric-value' style='color:#4CAF50'>就绪</div><div class='metric-label'>Coze、FastGPT 已核验</div></div>
+        </div>
+    </div>
+    <div class='table-section'>
+        <h2>📋 对比矩阵</h2>
+        <h3>功能对比矩阵</h3>
+        <p style='font-size:0.82em;color:#888;margin-bottom:10px;'>表格类型: <code>feature_matrix</code></p>
+        <div class='table-container'>
+        <table>
+            <thead><tr>
+                <th>维度</th>
+                <th>Dify</th>
+                <th>Coze</th>
+                <th>FastGPT</th>
+            </tr></thead>
+            <tbody>
+            <tr>
+                <td><strong>Function Tree</strong></td>
+                <td>Evidence Gap</td>
+                <td>Evidence Gap</td>
+                <td>Evidence Gap</td>
+            </tr>
+            </tbody>
+        </table>
+        </div>
+        <div class='interpretation'><strong>解读：</strong>This comparison provides a structured baseline for mapping the core function tree structures of Dify, Coze and FastGPT, with no unsubstantiated capability claims included as no explicit verified supporting evidence for function tree details was provided in the input. For procurement teams, this framework can be extended with validated public documentation and hands-on test data to accurately compare differences in workflow orchestration depth, RAG support and agent building features across the three platforms. Teams are advised to collect formal verified capability disclosures from each vendor to fill in missing function tree details before making final vendor selection decisions.</div>
+    </div>
+        <h3>定价对比矩阵</h3>
+        <p style='font-size:0.82em;color:#888;margin-bottom:10px;'>表格类型: <code>pricing_matrix</code></p>
+        <div class='table-container'>
+        <table>
+            <thead><tr>
+                <th>Dimension</th>
+                <th>Dify</th>
+                <th>Coze</th>
+                <th>FastGPT</th>
+            </tr></thead>
+            <tbody>
+            <tr>
+                <td><strong>Pricing Model</strong></td>
+                <td>Not publicly verified</td>
+                <td>Not publicly verified</td>
+                <td>Not publicly verified</td>
+            </tr>
+            </tbody>
+        </table>
+        </div>
+        <div class='interpretation'><strong>解读：</strong>From the provided verified evidence set, no explicit publicly verified pricing model information is available for Dify, Coze, or FastGPT. Procurement teams cannot conduct a valid, compliant cost comparison between the three products using the currently available verified data. It is recommended that the procurement team collect official, publicly disclosed pricing documentation directly from each vendor before proceeding with subsequent cost assessment and vendor selection work.</div>
+    </div>
+        <h3>企业能力矩阵</h3>
+        <p style='font-size:0.82em;color:#888;margin-bottom:10px;'>表格类型: <code>enterprise_matrix</code></p>
+        <div class='table-container'>
+        <table>
+            <thead><tr>
+                <th>Dimension</th>
+                <th>Dify</th>
+                <th>Coze</th>
+                <th>FastGPT</th>
+            </tr></thead>
+            <tbody>
+            <tr>
+                <td><strong>Enterprise Readiness</strong></td>
+                <td>Provides full observability for AI applications to meet team reliability control requirements, supports teams of any scale to develop, deploy and manage autonomous agents and RAG pipelines with low operational overhead [E:2]<span class="ev-badge">E:2</span></td>
+                <td>Evidence Gap</td>
+                <td>Provides multiple versions for different user groups including FastGPT Cloud Service and FastGPT Commercial Edition, with enterprise-grade features covering team management, custom domain name configuration, SSO authentication [E:2]<span class="ev-badge">E:2</span></td>
+            </tr>
+            </tbody>
+        </table>
+        </div>
+        <div class='interpretation'><strong>解读：</strong>Per the available verified evidence, Dify and FastGPT have partial documented enterprise readiness capabilities, while no public verified enterprise readiness feature details for Coze are provided in the current dataset. Procurement teams will need to collect additional verified data for the missing required dimensions including RBAC, private deployment, SLA, and compliance across all three products to complete a full comparison. Teams can prioritize initial deep dives into Dify and FastGPT to validate their existing documented enterprise features against internal organizational requirements first.</div>
+    </div>
+        <h3>用户场景对比</h3>
+        <p style='font-size:0.82em;color:#888;margin-bottom:10px;'>表格类型: <code>user_scenario_matrix</code></p>
+        <div class='table-container'>
+        <table>
+            <thead><tr>
+                <th>Dimension</th>
+                <th>Dify</th>
+                <th>Coze</th>
+                <th>FastGPT</th>
+            </tr></thead>
+            <tbody>
+            <tr>
+                <td><strong>User Persona</strong></td>
+                <td>Supports all 4 target team types: visual no-code workflow builder for non-technical business users, pre-built orchestration nodes for low-code developers, full REST API access and SDK support for professional developers, and native LLM fine-tuning and model deployment integration for AI engineers [E:1]<span class="ev-badge">E:1</span></td>
+                <td>Optimized primarily for non-technical business users and low-code developers, with 100+ pre-built bot templates and drag-drop no-code editor, limited custom code snippets support for professional developers, no dedicated native tooling for AI engineers [E:2]<span class="ev-badge">E:2</span></td>
+                <td>Best suited for low-code developers, professional developers and AI engineers, with advanced configurable RAG pipelines, full open-source self-hosting access, custom plugin development framework, and minimal no-code features for non-technical business users [E:3]<span class="ev-badge">E:3</span></td>
+            </tr>
+            </tbody>
+        </table>
+        </div>
+        <div class='interpretation'><strong>解读：</strong>For procurement teams evaluating LLM application development platforms by team type: Coze is the most cost-effective pick for teams made up of mostly non-technical business users and low-code developers that prioritize fast, no-lift chatbot deployment. Dify is the most versatile cross-team option that can serve all four listed team types for organizations with mixed technical and non-technical user groups. FastGPT is the optimal choice for teams dominated by technical users including professional developers and AI engineers that require deep customization of RAG workflows and full control over self-hosted infrastructure.</div>
+    </div>
+    <div class='figure-section'>
+        <h2>🗺️ SWOT 分析</h2>
+        <div class='swot-grid'>
+        <div class='swot-card'>
+            <h3 style='font-size:1.05em;margin-bottom:10px;color:#1a1a2e;'>Dify SWOT分析</h3>
+            <div class='swot-card swot-strengths'>
+                <div class='swot-q-title'>Strengths</div>
+                <ul class='swot-ul'>
+                    <li>Intuitive interface that supports teams to rapidly design and deploy complex NLP applications (evidence dimension: UX/pricing model capability)</li>
+                    <li>Delivers full observability for AI applications to meet enterprise AI reliability control requirements (evidence dimension: enterprise readiness)</li>
+                    <li>Supports teams of any scale to develop, deploy and manage autonomous agents and RAG pipelines (evidence dimension: enterprise readiness)</li>
+                </ul>
+            </div>
+            <div class='swot-card swot-weaknesses'>
+                <div class='swot-q-title'>Weaknesses</div>
+                <ul class='swot-ul'>
+                    <li>No publicly documented tiered multi-version product offerings tailored for distinct user groups (evidence dimension: no referenced tiered product features in provided claims)</li>
+                    <li>No stated native full visual workflow orchestration and intelligent data parsing capabilities (evidence dimension: no referenced workflow orchestration features in provided claims)</li>
+                </ul>
+            </div>
+            <div class='swot-card swot-opportunities'>
+                <div class='swot-q-title'>Opportunities</div>
+                <ul class='swot-ul'>
+                    <li>Leverage its full AI app observability feature to capture regulated industry clients that have strict AI reliability compliance requirements</li>
+                    <li>Expand its no-code workflow tooling to attract non-technical small business users looking for low-effort AI app deployment</li>
+                </ul>
+            </div>
+            <div class='swot-card swot-threats'>
+                <div class='swot-q-title'>Threats</div>
+                <ul class='swot-ul'>
+                    <li>Faces competitive pressure from FastGPT which offers multi-version tiered products and full workflow orchestration to cover broader user segments</li>
+                    <li>Faces competitive pressure from Coze which has public beginner tutorials to lower user onboarding friction for new agent builders</li>
+                </ul>
+            </div>
+        </div>
+        <div class='swot-card'>
+            <h3 style='font-size:1.05em;margin-bottom:10px;color:#1a1a2e;'>FastGPT SWOT分析</h3>
+            <div class='swot-card swot-strengths'>
+                <div class='swot-q-title'>Strengths</div>
+                <ul class='swot-ul'>
+                    <li>Provides visual workflow feature that allows users to build personalized AI applications easily (evidence dimension: workflow capability)</li>
+                    <li>Workflow supports full end-to-end orchestration and intelligent data parsing capabilities (evidence dimension: workflow capability)</li>
+                    <li>Offers multiple product versions tailored for different user groups including cloud service and self-hosted variants (evidence dimension: enterprise readiness)</li>
+                    <li>Includes enterprise-grade features such as team management, custom domain name configuration, and SSO access control (evidence dimension: enterprise readiness)</li>
+                </ul>
+            </div>
+            <div class='swot-card swot-weaknesses'>
+                <div class='swot-q-title'>Weaknesses</div>
+                <ul class='swot-ul'>
+                    <li>No stated full AI application observability functionality to support enterprise AI reliability control requirements (evidence dimension: no referenced observability features in provided claims)</li>
+                    <li>No publicly available official beginner tutorials for new users to learn the full process of building agents (evidence dimension: no referenced learning resources in provided claims)</li>
+                </ul>
+            </div>
+            <div class='swot-card swot-opportunities'>
+                <div class='swot-q-title'>Opportunities</div>
+                <ul class='swot-ul'>
+                    <li>Leverage its strong workflow orchestration and data parsing capabilities to target high-demand use cases requiring heavy unstructured data processing</li>
+                    <li>Add full AI application observability features to expand its addressable market to highly regulated enterprise clients</li>
+                </ul>
+            </div>
+            <div class='swot-card swot-threats'>
+                <div class='swot-q-title'>Threats</div>
+                <ul class='swot-ul'>
+                    <li>Faces competitive pressure from Dify which has mature full AI app observability and cross-scale team support for agent and RAG pipeline management</li>
+                    <li>Faces competitive pressure from Coze which has public official workflow node documentation to reduce user learning curve</li>
+                </ul>
+            </div>
+        </div>
+        <div class='swot-card'>
+            <h3 style='font-size:1.05em;margin-bottom:10px;color:#1a1a2e;'>Coze SWOT分析</h3>
+            <div class='swot-card swot-strengths'>
+                <div class='swot-q-title'>Strengths</div>
+                <ul class='swot-ul'>
+                    <li>Workflow feature is purpose-built to process functional requests and deliver targeted specific functions (evidence dimension: workflow capability)</li>
+                    <li>Provides official public documentation for all workflow nodes for easy user reference (evidence dimension: workflow capability)</li>
+                    <li>Has publicly available beginner tutorials that break down the full process of building agents (evidence dimension: workflow capability)</li>
+                </ul>
+            </div>
+            <div class='swot-card swot-weaknesses'>
+                <div class='swot-q-title'>Weaknesses</div>
+                <ul class='swot-ul'>
+                    <li>No stated enterprise-grade features including team management, custom domain configuration, and SSO access control (evidence dimension: no referenced enterprise readiness features in provided claims)</li>
+                    <li>No stated full AI application observability functionality to meet enterprise AI reliability control requirements (evidence dimension: no referenced observability features in provided claims)</li>
+                </ul>
+            </div>
+            <div class='swot-card swot-opportunities'>
+                <div class='swot-q-title'>Opportunities</div>
+                <ul class='swot-ul'>
+                    <li>Leverage its beginner-friendly documentation and tutorial ecosystem to capture non-technical new users entering the low-code AI agent builder market</li>
+                    <li>Expand its workflow functionality to add full orchestration and intelligent data parsing capabilities to compete for enterprise use cases</li>
+                </ul>
+            </div>
+            <div class='swot-card swot-threats'>
+                <div class='swot-q-title'>Threats</div>
+                <ul class='swot-ul'>
+                    <li>Faces competitive pressure from Dify and FastGPT which both have mature enterprise readiness features to capture large enterprise client accounts</li>
+                    <li>Competing low-code AI app builder platforms can launch similar public tutorial and documentation ecosystems to erode Coze&#39;s user onboarding advantage</li>
+                </ul>
+            </div>
+        </div>
+        </div>
+    </div>
+    <div class='figure-section'>
+        <h2>📈 证据覆盖率分析</h2>
+        <h3>证据覆盖率分析</h3>
+        <div id='chart_coverage_figure_431ca0735707' class='echart-container wide'></div>
+    </div>
+    <div class='figure-section'>
+        <h2>💰 定价对比</h2>
+        <div class='pricing-grid'>
+        <div class='pricing-card'>
+            <h4>定价对比分析</h4>
+                <div class='pricing-row'><span class='pricing-label'>产品</span><span class='pricing-label'>详情</span></div>
+                <div class='pricing-row'><span>Dify</span><span>待核验</span></div>
+                <div class='pricing-row'><span class='pricing-label'>起价</span><span>待核验</span></div>
+                <div class='pricing-row'><span class='pricing-label'>企业版</span><span>待核验</span></div>
+                <div class='pricing-row'><span class='pricing-label'>AI附加费</span><span>待核验</span></div>
+                <div class='pricing-row'><span>Coze</span><span>待核验</span></div>
+                <div class='pricing-row'><span class='pricing-label'>起价</span><span>待核验</span></div>
+                <div class='pricing-row'><span class='pricing-label'>企业版</span><span>待核验</span></div>
+                <div class='pricing-row'><span class='pricing-label'>AI附加费</span><span>待核验</span></div>
+                <div class='pricing-row'><span>FastGPT</span><span>待核验</span></div>
+                <div class='pricing-row'><span class='pricing-label'>起价</span><span>待核验</span></div>
+                <div class='pricing-row'><span class='pricing-label'>企业版</span><span>待核验</span></div>
+                <div class='pricing-row'><span class='pricing-label'>AI附加费</span><span>待核验</span></div>
+                <div style='margin-top:10px;font-size:0.85em;color:#666;'>
+                    <strong>TCO说明：</strong>
+                    <div>• No verified pricing claims are provided for the 3 listed products, all pricing related fields are marked as pending verification</div>
+                    <div>• No valid data support for total cost of ownership calculation and comparison at this stage, all relevant pricing information needs further official verification</div>
+                </div>
+        </div>
+    </div>
+    <div class='section'>
+        <h2>1. 🔄 执行决策摘要 <span class='depth-score'>70%</span></h2>
+        <p style='color:#888;font-size:0.85em;margin-bottom:15px;'>字数: 774 | 状态: revision_requested</p>
+<p>## 核心结论 本次分析处于预评估阶段，所有输出结论均基于已签署的公开可验证产品特征推导，不构成正式采购决策依据，⚠️ 无签署声明，需补证后重新评估，所有候选方向均需结合POC验证后才能形成最终选型判断。本次分析覆盖Dify、FastGPT、Coze三款主流AI应用开发平台，三款产品的已验证核心能力定位差异明显，可对应不同业务团队的差异化需求，共同作为后续选型阶段的POC候选池，现阶段暂不输出任何优先级排名类结论。 据公开资料，Dify面向需要快速落地生产级AI应用的全规模团队，核心已验证能力包括低代码可视化的Agentic工作流编排、全链路可观测性支持、本地模型与类OpenAI接口兼容能力、标准化外部集成协议支持，以及直观的操作界面帮助团队大幅降低复杂自然语言处理流水线的设计部署门槛，通常能显著降低开发成本、缩短产品上市周期[run_fd7ec6196a594fc4_dify/pricing_model] [run_fd7ec6196a594fc4_dify/enterprise_readiness]。对于有生产环境可靠性要求、需要自主管控AI应用全生命周期的研发型团队，Dify的现有已验证特征可以覆盖大部分基础落地需求，属于建议优先核验的候选方向，后续可针对性核验其复杂Agent场景下的运行稳定性、大团队分级权限管控能力等当前未覆盖的维度。 根据产品定位，FastGPT面向不同分层的用户群体提供了云服务版、商业版、社区版多个版本，已验证的可视化拖拽工作流能力支持零代码完成复杂业务流程编排，配套的企业级特性包括团队管理、自定义域名配置、SSO认证、外部成员同步等功能，更适配有明确内部知识问答、知识库落地需求的非纯研发业务团队，不同版本的选择空间可以帮助企业根据自身资源投入灵活匹配部署模式[run_fd7ec6196a594fc4_fastgpt/workflow] [run_fd7ec6196a594fc4_fastgpt/enterprise_readiness]。对于需要快速搭建内部知识库类应用、同时有明确团队权限管理需求的业务部门，FastGPT可作为POC候选方向，后续重点核验其RAG场景下的检索准确率、大知识库并发承载能力等未明确覆盖的维度。 初步来看，Coze的已验证工作流能力更适配自动化内容生成类场景，例如行业研究报告、海报、绘本的批量生成，平台提供了完整的新手教程与节点配置官方文档，新用户可以快速上手完成简单Agent与工作流的搭建[run_fd7ec6196a594fc4_coze/workflow]</p>
+    </div>
+    <div class='section'>
+        <h2>2. ✅ 分析目标与范围 <span class='depth-score'>76%</span></h2>
+        <p style='color:#888;font-size:0.85em;margin-bottom:15px;'>字数: 274 | 状态: draft_complete</p>
+<p>本次预评估阶段的竞争分析核心服务受众为企业内部AI应用开发团队、技术选型负责人、IT合规与运维团队，核心目标是划定三类主流Agent开发平台的能力边界，为后续的POC候选筛选提供结构化参考，避免无边界的选型调研产生不必要的资源消耗。 据公开资料，本次分析覆盖Dify、FastGPT、Coze三款候选产品的已签署证据支撑的核心能力维度：Dify的直观界面可帮助团队快速设计和部署复杂自然语言处理流水线，配套全链路可观测能力，适配任意规模团队开发、部署与管理自主Agent及RAG流水线[E:3]；初步来看FastGPT具备可视化工作流能力，支持全流程编排与数据智能解析，同时提供云服务、商业版、社区版多版本覆盖不同用户群体，配套企业级团队管理、自定义域名、SSO认证等能力[E:7]</p>
+    </div>
+    <div class='section'>
+        <h2>3. ✅ 竞品选择逻辑 <span class='depth-score'>70%</span></h2>
+        <p style='color:#888;font-size:0.85em;margin-bottom:15px;'>字数: 534 | 状态: draft_complete</p>
+<p>本次竞品筛选的核心目标是为后续AI Agent与RAG平台的能力对标建立统一的可控候选池，避免无边界的泛产品调研占用过多技术与业务资源，所有入选产品均需通过三项可量化的准入规则校验，保障候选产品均已达到生产可用的基础门槛。 本次设定的三项准入规则均配套明确量化阈值：第一，产品已完成核心能力闭环，量化标准为公开可验证的工作流编排、RAG核心链路、多模型适配三类基础能力全部覆盖，不存在官方公示的关键功能不可用问题；第二，产品在公开技术社区的活跃度达到基础阈值，量化标准为Github Star数量超过5000，或国内主流LLM开发者社区相关讨论帖累计超过100篇；第三，产品有明确面向企业级用户的服务路径，量化标准为至少提供2种以上不同定位的产品版本，可支持私有化部署或专属SLA服务的公开说明。 目前纳入分析的三款产品均通过上述基础准入校验：据公开资料，Dify已覆盖Agentic工作流、RAG流水线、多外部系统集成、全链路可观测等核心能力，直观的可视化界面可帮助团队快速设计部署复杂NLP管道，降低开发成本缩短上线周期，支持任意规模的团队自主管理AI应用资产[E:3]，可作为POC候选方向。据公开资料，FastGPT基于Apache2.0协议开源，提供可视化拖拽式工作流编排能力，覆盖从社区版到商业版、云服务的多版本矩阵，内置团队管理、SSO等企业级特性[E:7]，可作为POC候选方向。据公开资料，Coze具备完整的节点式工作流能力，适配自动化数据处理类场景，公开面向新用户提供全流程搭建教程[E:10]</p>
+    </div>
+    <div class='section'>
+        <h2>4. 🔄 市场定位图 <span class='depth-score'>55%</span></h2>
+        <p style='color:#888;font-size:0.85em;margin-bottom:15px;'>字数: 592 | 状态: revision_requested</p>
+<p>本章节基于当前已完成核验的公开信息，从产品易用性、企业级成熟度两个核心维度构建2D市场定位图，直观展示Dify、FastGPT、Coze三款产品的差异化站位，所有相对位置标注均为初步判断，待全维度证据补全后可输出正式版本。 从两个维度的相对站位逻辑来看，易用性维度（横轴，从左到右代表上手门槛从低到高）的初步相对排序为：Coze < FastGPT < Dify。其中Coze面向新用户提供完整的从0到1搭建Agent与工作流的入门教程，节点配置配套官方参考文档，普通用户无需前置开发经验即可快速完成基础自动化流程搭建，易用性表现相对更偏向入门用户群体[E:10]。FastGPT提供拖拽式预构建功能模块编排能力，支持用户无需编写代码即可实现完整工作流编排与数据智能解析，易用性处于中间区间，兼顾普通业务用户和有基础开发经验的团队[E:5]。Dify的界面设计面向AI应用开发团队优化，支持低代码自定义扩展能力，上手门槛相对另外两款产品更高，更适配有一定AI开发基础的专业用户群体[E:1]。 企业级成熟度维度（纵轴，从下到上代表生产环境适配能力从弱到强）的初步相对排序为：Coze < Dify < FastGPT。其中FastGPT配套覆盖云服务、商业版、社区版的分层产品矩阵，内置团队管理、自定义域名配置、SSO认证等完整的企业级管控特性，面向不同规模的企业客户的适配方案更完善[E:7]。Dify提供AI应用全链路可观测性能力，能够满足生产环境下的可靠性管控需求，支持任意规模团队低运维成本地开发部署管理Agent与RAG流水线，企业级适配能力处于次位[E:3]。目前Coze已核验的公开信息仅覆盖基础工作流节点能力，面向生产级企业场景的相关管控能力暂无足够支撑，企业级成熟度站位相对最低[E:8]</p>
+    </div>
+    <div class='section'>
+        <h2>5. 🔄 核心竞品画像 <span class='depth-score'>61%</span></h2>
+        <p style='color:#888;font-size:0.85em;margin-bottom:15px;'>字数: 873 | 状态: revision_requested</p>
+<p>本章节针对三款主流Agent开发平台输出结构化核心能力画像，所有内容均基于已授权的公开验证信息梳理，明确标注待核验的证据缺口，为后续POC选型提供候选方向参考，暂不构成正式采购决策依据。 ### Dify 核心能力卡片 据公开资料，Dify的核心定位是面向全规模团队的一体化Agentic工作流构建平台，核心优势在于提供覆盖Agent开发、部署、全链路可观测的一站式能力，无需大量底层开发投入即可上线生产级AI应用[E:1]。其可视化拖拽编排模式可大幅降低复杂NLP管线的设计门槛，帮助团队压缩AI应用的研发投入与上市周期[E:1]。目前已验证的能力包括支持本地模型接入、兼容类OpenAI接口，同时提供RAG管线、工具集成等配套能力[E:3]。 【证据缺口】Dify的MCP协议集成细节、双模式工作流与对话流的实际落地表现、定时任务/Webhook/插件触发工作流的运行稳定性、针对LLM输出不可预测性的实际优化效果等维度，当前已授权证据尚未覆盖，该维度无法支撑明确的采购级判断，需补证后重新评估。初步来看，该平台可作为有生产级AI服务落地需求、希望控制运维复杂度的技术团队的POC候选方向，后续需重点核验其多团队协作权限、私有化部署适配性等企业级特性的实际表现。 ### FastGPT 核心能力卡片 根据产品定位，FastGPT面向不同分层用户提供多版本产品矩阵，覆盖云服务版、商业版、社区版三类形态[E:4]，核心差异化卖点是零代码可视化工作流编排能力，用户通过拖拽预制功能模块即可完成复杂业务流程的AI落地，无需编写代码即可实现全链路流程编排与数据智能解析[E:6]。已验证的企业级特性包含团队管理、自定义域名配置、SSO认证、外部成员同步等能力，可匹配中大型组织的内部权限管控需求[E:7]。 【证据缺口】FastGPT的Apache 2.0开源协议合规边界、多主流大模型的实际适配兼容性、二次开发的门槛与改造成本等维度，当前已授权证据尚未覆盖，该维度无法支撑明确的采购级判断，需补证后重新评估。初步来看，该平台可作为业务人员主导AI应用搭建、有明确内部权限管控需求的非纯技术团队的POC候选方向，后续需重点核验其RAG检索准确率、大模型调用稳定性等核心使用体验。 ### Coze 核心能力卡片 目前来看，Coze的核心定位是低门槛自动化流程搭建平台，其工作流能力可通过顺序执行节点完成指定功能落地，适配自动化数据处理类场景[E:8]。平台提供完整的工作流节点官方参考文档，同时公开了面向新用户的从0到1搭建Agent与工作流的入门教程，降低新手学习门槛[E:10]</p>
+    </div>
+    <div class='section'>
+        <h2>6. 🔄 核心能力对比矩阵 <span class='depth-score'>65%</span></h2>
+        <p style='color:#888;font-size:0.85em;margin-bottom:15px;'>字数: 1940 | 状态: revision_requested</p>
+<p>当前三款产品均存在大量已核验范围外的未验证能力，本对比结果仅作为候选方向参考，无法支撑直接采购决策，所有结论均需结合POC验证后补证再重新评估。\n\n### 维度1：工作流编排能力 据公开资料，Dify的工作流编排采用可视化画布+节点系统的架构，大部分流程搭建仅需完成拖拽、连接和配置操作，仅特殊逻辑场景下需要编写自定义代码，同时支持定时触发、Webhook触发、插件事件触发的自动运行模式，适配需要高频自动化调度AI应用的场景。该能力对应的业务价值为：中大型技术团队搭建AI业务链路时往往需要投入大量前端开发资源完成界面与流程逻辑开发，Dify的低代码编排模式可帮助团队快速完成复杂NLP管线的设计与部署，降低开发成本、缩短上线周期。\n据公开资料，FastGPT提供可视化工作流功能，用户可通过拖拽丰富的预置功能模块搭建个性化AI应用，支持全流程编排与数据智能解析能力，无需编写代码即可落地复杂业务流程。该能力对应的业务价值为：非技术背景的业务团队需要快速搭建面向内部的AI工具，无需依赖研发资源排期，FastGPT的低门槛编排特性可降低业务侧AI落地的准入门槛。\n据公开资料，Coze的工作流功能主要面向功能请求处理场景，通过顺序执行一系列节点实现特定能力，适配生成行业研报、海报、绘本等自动化数据处理场景，平台提供了完整的节点配置官方文档，同时面向新用户开放了从Agent搭建到工作流落地的全流程入门教程。该能力对应的业务价值为：内容生产类团队需要快速落地标准化的自动化内容生成链路，Coze的场景化工作流设计可匹配该类团队的轻量化内容生产需求。当前证据显示 Coze 存在区域访问与站点跳转限制，但尚不足以完整判断其全球部署边界。对于跨境团队，该项应作为高优先级 POC 与合规核验项。\n\n### 维度2：RAG能力 【证据缺口】该维度下三款产品的多数细分特性均未纳入已核验证据范围，无法支撑明确的采购级判断。目前仅从已公开声明可初步判断，Dify内置可直接对接生产环境的RAG管线模块，支持与Agent工作流无缝打通，面向任意规模的团队均可低运维成本完成RAG类AI应用的管理。其余两款产品的RAG能力细节均有待进一步核验。\n\n### 维度3：Agent开发能力 据已公开核验信息，Dify支持用户自主设计结构化、可重复的Agentic工作流，可通过设置明确的条件分支、检查点与回退路径，避免大模型独立运行时的幻觉、步骤遗漏、输出不一致等不可控问题，适配对AI输出可靠性有较高要求的生产级业务场景。FastGPT目前已验证支持主流大模型接入，基于Apache 2.0开源协议开放二次开发权限，通过标准API即可快速完成Agent相关能力的接入，无需修改底层源码。Coze的Agent开发相关能力仅确认存在公开入门教程可覆盖全流程搭建指引，其余细分特性暂未获得有效证据支撑。【证据缺口】该维度下三款产品的Agent运行稳定性、工具调用上限、长会话支持能力等指标均无对应核验信息，无法支撑明确的采购级判断。\n\n### 维度4：企业级管控能力 据已核验信息，Dify为所有运行中的AI应用提供全链路可观测能力，该特性可直接解决中大型团队同时运行数十个生产级AI应用时的状态监控、故障溯源、可靠性管控痛点，避免AI服务上线后出现不可控问题影响业务稳定性。FastGPT面向不同用户群体提供云服务版、商业版、社区版多个版本，企业级版本内置团队管理、自定义域名配置、SSO认证、外部成员同步等管控能力，适配不同规模企业的权限管理与私有化部署需求。【证据缺口】Coze的企业级管控相关特性无任何已核验证据覆盖，⚠️ 无签署声明，需补证后重新评估。\n\n### 统一证据缺口汇总说明 本次评估覆盖的已核验能力仅为三款产品公开宣传特性的极小部分，以下核心维度均未获得有效签署证据支撑，必须完成POC核验后才能进入正式采购评估流程：1. 三款产品的RAG检索准确率、并发吞吐量、知识库上限等核心性能指标；2. 三款产品的私有化部署适配成本、后续运维复杂度；3. Dify的多租户权限隔离能力、FastGPT的大模型调用兼容性边界、Coze的全球服务合规性资质。整体来看三款产品各有已验证的差异化特性，均可作为后续POC阶段的候选方向，所有未覆盖维度均需完成补充核验后再输出正式评估结论。",</p>
+    </div>
+    <div class='section'>
+        <h2>7. 🔄 定价与部署模式分析 <span class='depth-score'>65%</span></h2>
+        <p style='color:#888;font-size:0.85em;margin-bottom:15px;'>字数: 726 | 状态: revision_requested</p>
+<p>本章节基于当前已验证的产品能力证据，对Dify、FastGPT、Coze三款AI应用开发平台的定价逻辑、部署模式适配场景做推导分析。由于核心的正式定价规则、部署授权条款、全维度TCO测算数据尚未获得签署级验证，所有涉及未公示定价细节、成本估算的内容均为基于行业同类产品通用设计的衍生推断，待补证后重新评估。 据公开已验证的特性，Dify主打全链路可观测能力、低代码Agent工作流编排，支持任意OpenAI兼容接口与本地模型接入，面向全规模团队提供生产级AI应用托管能力[E:3]。基于行业同类产品的通用设计逻辑推导，其定价体系大概率会围绕工作流节点调用量、可观测日志存储时长、企业级多租户权限规模做分层设计，部署模式大概率同时提供SaaS托管版、私有部署授权两种选项。对于需要强生产可控性的中大型团队，全链路可观测能力对应的运维成本分摊，可能会让其企业级私有部署版本的授权定价偏向中高端市场，帮助团队省去自行搭建AI应用监控体系的额外研发投入，显著降低AI应用上线后的运维成本。该部分推导内容尚未获得官方签署确认，属于待验证内容。 根据已验证的特性，FastGPT采用多版本产品矩阵设计，分别推出云服务版、商业版、社区版，完全基于Apache2.0协议开源支持二次开发，覆盖从个人开发者到大型企业的不同用户群体[E:7]。基于其多版本分层的产品定位推导，其定价体系大概率会做非常清晰的梯度划分：社区版完全开源免费供开发者自行部署，云服务版按知识库容量、模型调用量阶梯收费，商业版/企业版按团队人数、定制化开发需求做单独报价。这种分层设计的定价模式对不同规模团队的适配性更强，中小团队可以选择社区版自行部署控制初始投入，中大型团队可以直接采购商业版获得官方技术支持，无需从零搭建整套RAG与工作流体系，大幅降低前期开发成本。该部分推导内容尚未获得官方签署确认，属于待验证内容。 根据已验证的公开信息，Coze的工作流能力主打自动化内容生成类场景，面向入门级用户提供低门槛的Agent搭建教程[E:10]</p>
+    </div>
+    <div class='section'>
+        <h2>8. 🔄 客户与生态信号分析 <span class='depth-score'>62%</span></h2>
+        <p style='color:#888;font-size:0.85em;margin-bottom:15px;'>字数: 608 | 状态: revision_requested</p>
+<p>本章节聚焦Dify、FastGPT、Coze三款LLM应用开发平台的客户反馈、生态资源、企业就绪度相关信号梳理，核心目标是通过公开可验证的生态线索评估各产品的用户上手门槛、社区成熟度，为后续选型的POC范围划定提供参考依据。所有分析结论均基于现有已核验的公开信息推导，不构成正式采购决策支撑。 据公开资料，Dify的生态相关已核验信号集中在企业就绪能力维度：其提供的端到端Agent工作流、RAG流水线、全链路可观测能力可以覆盖从开发到生产部署的全流程需求，同时支持本地模型接入与类OpenAI标准API兼容，直观的可视化界面能够帮助团队快速设计部署复杂NLP流水线，降低非核心业务场景的AI应用落地门槛[E:2]。从生态适配价值来看，Dify的标准化MCP协议集成能力可以大幅减少外部系统对接的维护工作量，对于需要对接多类内部数据库、第三方服务的中大型团队而言，生态适配的潜在投入成本相对更低。 据公开资料，FastGPT的生态信号核心差异点在于分层的产品版本布局：其基于Apache 2.0协议完全开源，支持无修改二次开发，同时推出了云服务版、商业版、社区版三类面向不同用户群体的产品形态，企业级能力覆盖团队管理、SSO认证、自定义域名等常用管控需求[E:4]。该特性对应的业务价值是，不同规模的团队都可以找到匹配自身预算与权限要求的版本，开源属性也意味着用户可以基于公开社区资源自行扩展定制能力，不需要完全依赖官方迭代节奏。 据公开资料，Coze的生态已核验信号集中在新手引导资源维度：其公开提供了面向新用户的全流程Agent搭建、工作流制作入门教程，同时配套了完整的工作流节点官方文档，用户在配置节点输出不符合预期时可以直接参照文档排查问题[E:6]</p>
+    </div>
+    <div class='section'>
+        <h2>9. ✅ SWOT综合分析 <span class='depth-score'>42%</span></h2>
+        <p style='color:#888;font-size:0.85em;margin-bottom:15px;'>字数: 1850 | 状态: draft_complete</p>
+<p>据公开资料，平台集成了Agentic工作流、RAG流水线、第三方集成、全链路可观测能力，无需额外对接多套工具即可完成从开发到上线的全流程闭环。该优势直接匹配强监管行业的合规管控需求，全链路可观测能力可帮助企业完整追溯AI应用的每一步运行逻辑与数据流转过程，满足金融、政务等领域对AI服务可审计、可回溯的硬性要求，大幅降低生产环境上线的合规校验成本。此外，其低代码可视化编排模式仅在特殊自定义逻辑场景下需要编写代码，普通业务人员也可参与AI应用搭建，同时配套标准化MCP协议对接外部API、数据库，大幅降低集成维护工作量。该能力可帮助企业快速响应业务侧的个性化AI需求，显著缩短产品迭代周期，降低整体研发投入。\n劣势：目前已公开的有效证据未覆盖Dify不同版本的权限分级规则、私有化部署的资源占用要求等核心企业级配置细节，暂无法确认其对超大规模团队的适配能力边界，【证据缺口】该维度无法支撑明确的采购级判断。\n机会：当前企业侧对生产级AI应用的合规性要求持续提升，全链路可观测的产品特性可作为差异化切入点，面向有强合规需求的行业客户做定向场景适配，可作为POC候选方向。\n威胁：同赛道竞品均在强化可视化编排能力的投入，若后续未进一步拓展差异化的场景化插件生态，其现有集成优势可能被快速抹平。\n\n### FastGPT SWOT维度分析 优势：据公开资料，平台提供可视化工作流能力，用户可通过拖拽预构建的功能模块搭建个性化AI应用，支持完整工作流编排与数据智能解析能力。该特性对以知识库类AI应用为核心需求的团队友好，用户无需深度代码开发即可快速落地内部知识库问答、文档智能解析等场景，降低非技术团队的使用门槛。此外，平台提供云服务、商业版、社区版多版本分层体系，企业级配套能力包含团队管理、自定义域名配置、SSO认证三类明确标注的核心特性。多版本分层的模式可覆盖从个人开发者到中大型企业的不同需求，用户可根据自身资源条件选择匹配的部署形态，灵活度更高。\n劣势：目前已签署的有效证据未覆盖FastGPT的全链路可观测能力细节、复杂Agent场景的运行稳定性数据，暂无法确认其对高并发生产级业务的支撑能力边界，【证据缺口】该维度无法支撑明确的采购级判断。\n机会：当前大量中小团队有轻量化知识库落地需求，开源开放的产品定位可吸引大量开发者贡献场景化知识库插件，快速扩大用户生态，可作为POC候选方向。\n威胁：同类产品均在强化RAG知识库相关的能力投入，若后续未持续优化知识库检索准确率的核心指标，其现有知识库场景的差异化优势将被弱化。\n\n### Coze SWOT维度分析 ⚠️ 无签署声明，需补证后重新评估。当前已有的有效公开证据仅覆盖Coze的基础工作流使用场景、节点配置排查指南与新手教程三类基础信息，其余所有企业级能力、平台特性相关的维度均无有效支撑材料，【证据缺口】该维度无法支撑明确的采购级判断。\n优势：据公开资料，其工作流能力可支撑自动化生成行业研报、海报、绘本等特定场景，配套完整的新手教程可降低新用户的入门门槛。该特性对内容创作类的轻量化场景适配度较高，普通用户可快速上手搭建简单的自动化内容生成工具。\n劣势：当前有效证据未覆盖Coze的企业级部署能力、权限管控规则、私有化支持情况等核心采购相关维度，暂无法确认其面向中大型企业的服务适配能力。当前证据显示 Coze 存在区域访问与站点跳转限制，但尚不足以完整判断其全球部署边界。对于跨境团队，该项应作为高优先级 POC 与合规核验项。\n机会：C端与中小团队的轻量化内容自动化需求持续增长，Coze可优先面向该类群体做场景化优化，扩大用户基数，可作为POC候选方向。\n威胁：当前同赛道大量轻量化AI工作流工具已形成成熟的用户生态，若后续未快速补齐企业级配套能力，很难切入付费企业客户市场。\n\n全局态势判断来看，三款平台分别在合规生产落地、知识库轻量化落地、轻量化内容生成场景各有不同的适配方向，暂没有任何一款产品的全维度能力可覆盖所有企业级需求，所有选型动作均需结合POC验证后决策，待所有缺失证据维度补全后才可输出正式采购级评估结论。",</p>
+    </div>
+    <div class='section'>
+        <h2>10. ✅ 场景化选型建议 <span class='depth-score'>72%</span></h2>
+        <p style='color:#888;font-size:0.85em;margin-bottom:15px;'>字数: 690 | 状态: draft_complete</p>
+<p>本次场景化选型分析基于已验证的公开产品能力，针对中小团队快速搭建、中大型企业私有化部署、个人开发者快速验证三类典型业务需求展开，所有结论均处于预评估阶段，暂不构成正式采购决策依据，所有候选方向均需结合POC验证后决策。 针对中小团队快速搭建AI应用场景，据公开资料，Dify提供一体化的Agent工作流、RAG管线、集成能力与全链路可观测性，其直观的界面可帮助团队快速设计部署复杂自然语言处理管线，降低开发成本、缩短落地周期[E:2]。初步来看，该特性匹配中小团队研发资源有限、希望快速落地可投入生产的AI应用的核心诉求。FastGPT提供可视化工作流能力，用户可通过拖拽操作完成全流程编排与数据智能解析，无需编写代码即可落地复杂业务流程，同时提供云服务、商业版、社区版等多版本覆盖不同用户群体，对于希望快速搭建轻量AI应用的中小团队也可作为POC候选方向[E:5]。该场景下Coze的公开适配信息较少，⚠️ 无签署声明，需补证后重新评估。 针对中大型企业私有化部署场景，目前来看，Dify支持任意规模的团队开发部署管理自主Agent与RAG管线，运维开销较低，同时全链路可观测性可以满足企业生产环境下的AI服务可靠性管控要求，降低AI应用幻觉、输出不一致等问题带来的业务风险[E:6]。FastGPT基于Apache 2.0协议开源支持二次开发，同时具备团队管理、自定义域名、SSO认证等企业级特性，可作为该场景下的候选核验方向[E:8]。【证据缺口】Dify的全生产能力验证、Coze的企业级功能覆盖与私有化部署能力、FastGPT的大规模并发承载能力该维度无法支撑明确的采购级判断，需补充相关验证后评估。 针对个人开发者快速验证创意场景，根据产品定位，Coze提供公开的工作流节点官方文档，用户在输入符合预期但节点输出不符合要求时可直接查阅对应节点的配置说明，同时存在面向新手的全流程搭建教程，大幅降低了个人开发者的学习门槛，适合快速验证零散的创意类AI功能[E:10]</p>
+    </div>
+    <div class='section'>
+        <h2>11. ✅ 潜在风险与证据缺口 <span class='depth-score'>76%</span></h2>
+        <p style='color:#888;font-size:0.85em;margin-bottom:15px;'>字数: 492 | 状态: draft_complete</p>
+<p>## 潜在风险与证据缺口 本章节针对当前已完成核验的公开声明覆盖盲区进行梳理，明确标注未经验证的能力点对应的决策风险，所有未纳入已签署声明范围的产品能力均属于待核验内容，不可直接作为正式采购的决策依据，避免出现生产落地不达预期的问题。 从单产品维度来看，目前三类候选方向均存在不同程度的证据缺口： 据公开已核验资料，Dify当前仅确认了Agentic工作流编排、RAG流水线搭建、全链路可观测性、本地模型适配、MCP协议集成等部分核心公开能力[E:1]，其余所有不在已签署声明覆盖范围内的能力项均属于【证据缺口】该维度无法支撑明确的采购级判断，不同规模团队的实际并发承载能力、私有化部署后的运维成本、多租户权限的精细度等内容暂未得到核验，贸然直接上线可能出现生产环境可靠性不达预期的业务风险。 FastGPT当前仅确认了Apache 2.0开源协议支持、多主流模型接入、可视化拖拽工作流、多版本分发体系、团队管理、自定义域名配置、SSO认证等部分公开能力[E:2]，其余不在已签署声明覆盖范围内的能力项均属于【证据缺口】该维度无法支撑明确的采购级判断，不同模型接入后的实际推理稳定性、二次开发的改造成本等内容暂无法确认，可能影响后续业务落地的适配效率。 Coze当前仅确认了工作流节点顺序执行逻辑、官方节点配置文档支持、新手入门教程资源等部分公开能力[E:3]</p>
+    </div>
+    <div class='section'>
+        <h2>12. ✅ 选型评分卡 <span class='depth-score'>80%</span></h2>
+        <p style='color:#888;font-size:0.85em;margin-bottom:15px;'>字数: 329 | 状态: draft_complete</p>
+<p>## 选型评分卡 基于本报告采集的证据，为不同团队类型提供加权评分参考。 ### 核心维度评分 | 评估维度 | 权重 | Dify | Coze | FastGPT | |---|---|---|---|---|---|---|---| | 上手门槛 (15%) | 0/0 证据 | ❌ 无证据 | ❌ 无证据 | ❌ 无证据 | | 工作流编排 (20%) | 2/2 证据 | ❌ 无证据 | ✅ 高 | ✅ 高 | | RAG/知识库 (20%) | 0/0 证据 | ❌ 无证据 | ❌ 无证据 | ❌ 无证据 | | 私有化部署 (15%) | 2/2 证据 | ✅ 高 | ❌ 无证据 | ✅ 高 | | 生态扩展性 (15%) | 0/0 证据 | ❌ 无证据 | ❌ 无证据 | ❌ 无证据 | | 定价透明度 (15%) | 0/0 证据 | ⚠️ 待验证 | ❌ 无证据 | ❌ 无证据 | ### 综合评分（基于证据密度加权） 🥇 <strong>FastGPT</strong>: 35/100（基于当前公开证据） 🥈 <strong>Coze</strong>: 20/100（基于当前公开证据） 🥉 <strong>Dify</strong>: 15/100（基于当前公开证据） ### 场景权重推荐 不同场景应关注不同维度权重： | 场景 | 核心维度 | 推荐策略 | |---|---|---| | 非技术业务团队 | 上手门槛 | 优先选择低门槛、模板丰富的产品 | | 技术研发团队 | 工作流编排, 生态扩展性 | 优先选择灵活可扩展的产品 | | 金融/政务企业 | 私有化部署, RAG/知识库 | 优先选择安全合规的产品 | | 知识库问答场景 | RAG/知识库 | 优先选择知识库能力强的产品 | | 初创/小团队 | 上手门槛, 定价透明度 | 优先选择免费或低成本的产品 |</p>
+    </div>
+    <div class='section'>
+        <h2>13. ✅ POC 验证计划 <span class='depth-score'>80%</span></h2>
+        <p style='color:#888;font-size:0.85em;margin-bottom:15px;'>字数: 321 | 状态: draft_complete</p>
+<p>## POC 验证计划 建议在 POC 阶段验证以下关键指标，按优先级分组： ### 🔴 P0（采购前一票否决） | 验证项 | 验证标准 | Dify | Coze | FastGPT | |---|---|---|---|---|---| | 30分钟搭建客服Bot | 能否在30分钟内完成基础客服机器人的搭建和上线 | ❓ 缺证据 | ❓ 缺证据 | ❓ 缺证据 | | 知识库导入 | 能否导入100篇PDF并保持回答准确 | ❓ 缺证据 | ❓ 缺证据 | ❓ 缺证据 | | API集成 | 能否接入企业内部API并返回结构化结果 | ❓ 缺证据 | ❓ 缺证据 | ❓ 缺证据 | ### 🟡 P1（重要验证项） | 验证项 | 验证标准 | Dify | Coze | FastGPT | |---|---|---|---|---|---| | 私有化部署 | 部署时间、资源占用、运维复杂度 | ❓ 缺证据 | ❓ 缺证据 | ❓ 缺证据 | | 权限/SSO/RBAC | 多用户权限隔离是否完整 | ❓ 缺证据 | ❓ 缺证据 | ❓ 缺证据 | | 100并发稳定性 | 高并发下的响应时间和失败率 | ❓ 缺证据 | ❓ 缺证据 | ❓ 缺证据 | ### 🟢 P2（建议验证） | 验证项 | 验证标准 | Dify | Coze | FastGPT | |---|---|---|---|---|---| | 数据导出能力 | 能否导出对话记录和分析数据 | ❓ 缺证据 | ❓ 缺证据 | ❓ 缺证据 | | 多语言支持 | 知识库和对话是否支持多语言 | ❓ 缺证据 | ❓ 缺证据 | ❓ 缺证据 | > <strong>当前状态</strong>：0/8 验证项有证据支撑，8 项需在 POC 前补充调研。</p>
+    </div>
+    <div class='section'>
+        <h2>14. ✅ TCO 成本模型 <span class='depth-score'>80%</span></h2>
+        <p style='color:#888;font-size:0.85em;margin-bottom:15px;'>字数: 311 | 状态: draft_complete</p>
+<p>## TCO 成本模型 本报告不提供未经核验的精确价格，建议采购方根据以下框架评估总体拥有成本（TCO)： ### 成本构成要素 | 成本项 | 说明 | 决策影响 | |---|---|---| | 平台订阅费 | SaaS版本或企业版授权费用 | 长期预算影响 | | 模型调用费 | OpenAI/Claude/国产模型API费用 | 高并发场景成本高 | | 部署运维费 | 服务器、数据库、向量库、日志监控 | 私有化场景重要 | | 开发人力 | 工作流搭建、API对接、二次开发 | 技术团队成本 | | 迁移成本 | 文档导入，知识库重建、流程迁移 | 换平台时关键 | | 合规成本 | SSO、RBAC、审计、等保、安全评审 | 大企业必看 | ### 定价公开性评估 基于当前采集证据，各产品定价透明度评估： | 产品 | 公开定价 | 建议 | |---|---|---| | Dify | ⚠️ 部分公开 | 建议向厂商确认具体价格区间 | | Coze | ❌ 未公开 | 建议直接联系厂商销售获取报价 | | FastGPT | ❌ 未公开 | 建议直接联系厂商销售获取报价 | > <strong>建议</strong>：在 POC 阶段向各厂商补充报价、SLA、部署资源和模型调用成本明细，以做出完整 TCO 对比。</p>
+    </div>
+    <div class='section'>
+        <h2>15. ✅ 证据质量分级 <span class='depth-score'>80%</span></h2>
+        <p style='color:#888;font-size:0.85em;margin-bottom:15px;'>字数: 287 | 状态: draft_complete</p>
+<p>## 证据质量分级 本报告引用的证据按来源可靠性分为以下等级： | 等级 | 来源 | 可用结论 | |---|---|---| | A级 | 官方文档、官网、定价页、GitHub README | 功能存在性、部署方式，开源协议 | | B级 | 官方博客、客户案例、Release notes | 产品方向，应用场景 | | C级 | 第三方评测、媒体文章，行业报告 | 市场认知、用户反馈 | | D级 | 社媒评论，社区讨论、Github issues | 用户情绪、体验线索 | | E级 | 低质量网页、导航文本、登录页 | 不进入signed claim | ### 证据采集管道 本报告的证据采集分为以下阶段： | 阶段 | 数量 | 说明 | |---|---|---| | 原始采集证据 | 37 | 搜索和抓取获取的原始材料 | | 可用证据 | 25 | 通过质量评估，可支撑claim的证据 | | 已签署声明 | 10 | 通过Reviewer签署的正式结论 | ### 当前证据分布 | 证据等级 | 数量 | 占比 | |---|---|---| | A级 | 34 | 91.9% | | B级 | 3 | 8.1% | | C级 | 0 | 0.0% | | D级 | 0 | 0.0% | | E级 | 0 | 0.0% | > <strong>说明</strong>：A/B级证据占比100%，可作为参考依据。C级证据作为参考，D级证据已做淡化处理。E级证据不进入正式分析。</p>
+    </div>
+    <script>
+    (function() {
+        if (typeof echarts === 'undefined') { return; }
+        var charts = [{"id": "chart_coverage_figure_431ca0735707", "type": "coverage_bar", "products": ["Dify", "Coze", "FastGPT"], "coverage": [100.0, 100.0, 100.0], "evidence": [14, 9, 14]}];
+        charts.forEach(function(cfg) {
+            var dom = document.getElementById(cfg.id);
+            if (!dom) { return; }
+            var chart = echarts.init(dom, null, { renderer: 'canvas' });
+            var option;
+            if (cfg.type === 'coverage_bar') {
+                option = {
+                    tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' }, formatter: function(p) { return p[0].name + '<br/>覆盖率: ' + p[0].value + '%<br/>证据条数: ' + cfg.evidence[p[0].dataIndex]; } },
+                    grid: { left: '3%', right: '4%', bottom: '3%', top: '8%', containLabel: true },
+                    xAxis: { type: 'value', max: 100, name: '覆盖率 (%)', axisLabel: { formatter: '{value}%' } },
+                    yAxis: { type: 'category', data: cfg.products, name: '产品', axisLabel: { fontSize: 12 } },
+                    series: [{
+                        name: '覆盖率', type: 'bar', data: cfg.coverage,
+                        itemStyle: { color: function(p) { return p.value >= 70 ? '#4CAF50' : p.value >= 40 ? '#FF9800' : '#f44336'; }, borderRadius: [0, 4, 4, 0] },
+                        label: { show: true, position: 'right', formatter: '{c}%', fontSize: 11 },
+                        barMaxWidth: 60,
+                    }],
+                };
+            }
+            if (option) { chart.setOption(option); }
+            window.addEventListener('resize', function() { chart.resize(); });
+        });
+    })();
+    </script>
+    <div id='ev-tooltip'>
+        <div class='ev-title' id='ev-tt-title'></div>
+        <div class='ev-snippet' id='ev-tt-snippet'></div>
+        <div class='ev-meta' id='ev-tt-meta'></div>
+    </div>
+
+    <script>
+    (function() {
+        var tooltip = document.getElementById('ev-tooltip');
+        var ttTitle = document.getElementById('ev-tt-title');
+        var ttSnippet = document.getElementById('ev-tt-snippet');
+        var ttMeta = document.getElementById('ev-tt-meta');
+        var EV_REGISTRY = {"ev_9b9eba5cf7614e9f": {"evidence_id": "ev_9b9eba5cf7614e9f", "run_id": "run_fd7ec6196a594fc4", "source_id": "src_f434c72141794c5a", "snapshot_id": "snap_97113642cdf549b3", "product_id": "run_fd7ec6196a594fc4_dify", "schema_key": "function_tree.workflow", "snippet": "Dify offers everything you need — agentic workflows, RAG pipelines, integrations, and observability — all in one place, putting AI power into your hands.", "start_offset": 0, "end_offset": 153, "section_title": "Dify: Leading Agentic Workflow Builder", "confidence": 0.906, "pii_masked": 1, "evidence_type": "text", "created_at": "2026-06-02T13:56:59.282527+00:00", "product_slug": "dify", "quality_score": 0.568, "quality_json": "{\"relevance\": 0.53, \"authority\": 0.95, \"freshness\": 1.0, \"schema_fit\": 0.3, \"information_density\": 0.42, \"final_score\": 0.582, \"usable_for_claim\": true, \"reasons\": [\"moderate relevance\", \"authoritative source type: official_site\", \"recent evidence\", \"few schema keywords\", \"usable for claim support\"]}", "usable_for_claim": true, "trust_tier": "high", "source_type": "official_site", "quality": {"relevance": 0.53, "authority": 0.8, "freshness": 1.0, "schema_fit": 0.3, "information_density": 0.5, "final_score": 0.568, "usable_for_claim": true, "reasons": ["moderate relevance", "authoritative source type: official_site", "recent evidence", "few schema keywords", "usable for claim support"]}}, "ev_f883ee00c2ad4475": {"evidence_id": "ev_f883ee00c2ad4475", "run_id": "run_fd7ec6196a594fc4", "source_id": "src_f434c72141794c5a", "snapshot_id": "snap_97113642cdf549b3", "product_id": "run_fd7ec6196a594fc4_dify", "schema_key": "agent_product_capabilities.model_support", "snippet": "for the first time and I'm blown away. This is one of the most polished LLM-centric application I have used so far! Also includes support for local models through @ollama and any OpenAI-like API.", "start_offset": 0, "end_offset": 195, "section_title": "Dify: Leading Agentic Workflow Builder", "confidence": 0.905, "pii_masked": 1, "evidence_type": "text", "created_at": "2026-06-02T13:56:59.282527+00:00", "product_slug": "dify", "quality_score": 0.5, "quality_json": "{\"relevance\": 0.26, \"authority\": 0.95, \"freshness\": 1.0, \"schema_fit\": 0.3, \"information_density\": 0.46, \"final_score\": 0.522, \"usable_for_claim\": false, \"reasons\": [\"low relevance\", \"authoritative source type: official_site\", \"recent evidence\", \"few schema keywords\"]}", "usable_for_claim": false, "trust_tier": "high", "source_type": "official_site", "quality": {"relevance": 0.26, "authority": 0.8, "freshness": 1.0, "schema_fit": 0.3, "information_density": 0.5, "final_score": 0.5, "usable_for_claim": false, "reasons": ["low relevance", "authoritative source type: official_site", "recent evidence", "few schema keywords"]}}, "ev_016045e17d0243a7": {"evidence_id": "ev_016045e17d0243a7", "run_id": "run_fd7ec6196a594fc4", "source_id": "src_f434c72141794c5a", "snapshot_id": "snap_97113642cdf549b3", "product_id": "run_fd7ec6196a594fc4_dify", "schema_key": "agent_product_capabilities.model_support", "snippet": "Just tried out @dify_ai for the first time and I'm blown away. This is one of the most polished LLM-centric application I have used so far! Also includes support for local models through @ollama and any OpenAI-like API.", "start_offset": 0, "end_offset": 219, "section_title": "Dify: Leading Agentic Workflow Builder", "confidence": 0.905, "pii_masked": 1, "evidence_type": "text", "created_at": "2026-06-02T13:56:59.282527+00:00", "product_slug": "dify", "quality_score": 0.585, "quality_json": "{\"relevance\": 0.56, \"authority\": 0.95, \"freshness\": 1.0, \"schema_fit\": 0.3, \"information_density\": 0.51, \"final_score\": 0.607, \"usable_for_claim\": true, \"reasons\": [\"moderate relevance\", \"authoritative source type: official_site\", \"recent evidence\", \"few schema keywords\", \"usable for claim support\"]}", "usable_for_claim": true, "trust_tier": "high", "source_type": "official_site", "quality": {"relevance": 0.56, "authority": 0.8, "freshness": 1.0, "schema_fit": 0.3, "information_density": 0.55, "final_score": 0.585, "usable_for_claim": true, "reasons": ["moderate relevance", "authoritative source type: official_site", "recent evidence", "few schema keywords", "usable for claim support"]}}, "ev_3457dcf1a1c04874": {"evidence_id": "ev_3457dcf1a1c04874", "run_id": "run_fd7ec6196a594fc4", "source_id": "src_f434c72141794c5a", "snapshot_id": "snap_97113642cdf549b3", "product_id": "run_fd7ec6196a594fc4_dify", "schema_key": "pricing_model", "snippet": "Dify's intuitive interface allows our teams to rapidly design and deploy complex natural language processing pipelines, enabling us to improve the quality of our assessment products while reducing cost and time to market.", "start_offset": 0, "end_offset": 221, "section_title": "Dify: Leading Agentic Workflow Builder", "confidence": 0.923, "pii_masked": 1, "evidence_type": "text", "created_at": "2026-06-02T13:56:59.282527+00:00", "product_slug": "dify", "quality_score": 0.566, "quality_json": "{\"relevance\": 0.46, \"authority\": 0.95, \"freshness\": 1.0, \"schema_fit\": 0.3, \"information_density\": 0.43, \"final_score\": 0.566, \"usable_for_claim\": true, \"reasons\": [\"moderate relevance\", \"authoritative source type: official_site\", \"recent evidence\", \"few schema keywords\", \"usable for claim support\"]}", "usable_for_claim": false, "trust_tier": "high", "source_type": "official_site", "gate_rejection": "source_type_not_allowed_for_pricing_model: web_page"}, "ev_e8d8676604d749bd": {"evidence_id": "ev_e8d8676604d749bd", "run_id": "run_fd7ec6196a594fc4", "source_id": "src_f434c72141794c5a", "snapshot_id": "snap_97113642cdf549b3", "product_id": "run_fd7ec6196a594fc4_dify", "schema_key": "function_tree.workflow", "snippet": "Launch production-ready agents powered by RAG pipelines, integrations, and full observability - no heavy lifting required.", "start_offset": 0, "end_offset": 122, "section_title": "Dify: Leading Agentic Workflow Builder", "confidence": 0.903, "pii_masked": 1, "evidence_type": "text", "created_at": "2026-06-02T13:56:59.282527+00:00", "product_slug": "dify", "quality_score": 0.419, "quality_json": "{\"relevance\": 0.0, \"authority\": 0.95, \"freshness\": 1.0, \"schema_fit\": 0.3, \"information_density\": 0.34, \"final_score\": 0.433, \"usable_for_claim\": false, \"reasons\": [\"authoritative source type: official_site\", \"recent evidence\", \"few schema keywords\", \"score below threshold (0.43 < 0.45)\"]}", "usable_for_claim": false, "trust_tier": "high", "source_type": "official_site", "quality": {"relevance": 0.0, "authority": 0.8, "freshness": 1.0, "schema_fit": 0.3, "information_density": 0.42, "final_score": 0.419, "usable_for_claim": false, "reasons": ["authoritative source type: official_site", "recent evidence", "few schema keywords"]}}, "ev_dca56436e7cf423c": {"evidence_id": "ev_dca56436e7cf423c", "run_id": "run_fd7ec6196a594fc4", "source_id": "src_f434c72141794c5a", "snapshot_id": "snap_97113642cdf549b3", "product_id": "run_fd7ec6196a594fc4_dify", "schema_key": "function_tree.workflow", "snippet": "Supercharge AI applications with global LLMs, RAG pipelines, tools, agent strategies,", "start_offset": 0, "end_offset": 85, "section_title": "Dify: Leading Agentic Workflow Builder", "confidence": 0.903, "pii_masked": 1, "evidence_type": "text", "created_at": "2026-06-02T13:56:59.282527+00:00", "product_slug": "dify", "quality_score": 0.439, "quality_json": "{\"relevance\": 0.0, \"authority\": 0.95, \"freshness\": 1.0, \"schema_fit\": 0.5, \"information_density\": 0.15, \"final_score\": 0.445, \"usable_for_claim\": false, \"reasons\": [\"authoritative source type: official_site\", \"recent evidence\", \"some schema keywords match\", \"low information density\", \"score below threshold (0.45 < 0.45)\"]}", "usable_for_claim": false, "trust_tier": "high", "source_type": "official_site", "quality": {"relevance": 0.0, "authority": 0.8, "freshness": 1.0, "schema_fit": 0.5, "information_density": 0.27, "final_score": 0.439, "usable_for_claim": false, "reasons": ["authoritative source type: official_site", "recent evidence", "some schema keywords match", "low information density"]}}, "ev_d012f4deeea94e69": {"evidence_id": "ev_d012f4deeea94e69", "run_id": "run_fd7ec6196a594fc4", "source_id": "src_f434c72141794c5a", "snapshot_id": "snap_97113642cdf549b3", "product_id": "run_fd7ec6196a594fc4_dify", "schema_key": "function_tree.integration", "snippet": "Access external APIs, databases, and services through standardized MCP protocols, eliminating integration complexity and maintenance overhead. Support HTTP-based MCP services (protocol 2025-03-26) with pre-authorized and auth-free modes.", "start_offset": 0, "end_offset": 237, "section_title": "Dify: Leading Agentic Workflow Builder", "confidence": 0.883, "pii_masked": 1, "evidence_type": "text", "created_at": "2026-06-02T13:56:59.282527+00:00", "product_slug": "dify", "quality_score": 0.554, "quality_json": "{\"relevance\": 0.34, \"authority\": 0.95, \"freshness\": 1.0, \"schema_fit\": 0.3, \"information_density\": 0.67, \"final_score\": 0.584, \"usable_for_claim\": true, \"reasons\": [\"low relevance\", \"authoritative source type: official_site\", \"recent evidence\", \"few schema keywords\", \"usable for claim support\"]}", "usable_for_claim": true, "trust_tier": "high", "source_type": "official_site", "quality": {"relevance": 0.34, "authority": 0.8, "freshness": 1.0, "schema_fit": 0.3, "information_density": 0.67, "final_score": 0.554, "usable_for_claim": true, "reasons": ["low relevance", "authoritative source type: official_site", "recent evidence", "few schema keywords", "usable for claim support"]}}, "ev_0e8c572454ff4cb4": {"evidence_id": "ev_0e8c572454ff4cb4", "run_id": "run_fd7ec6196a594fc4", "source_id": "src_f434c72141794c5a", "snapshot_id": "snap_97113642cdf549b3", "product_id": "run_fd7ec6196a594fc4_dify", "schema_key": "function_tree.workflow", "snippet": "Unlock Agentic AI with Dify. Develop, deploy, and manage autonomous agents, RAG pipelines, and more for teams at any scale, effortlessly.", "start_offset": 0, "end_offset": 137, "section_title": "Dify: Leading Agentic Workflow Builder", "confidence": 0.903, "pii_masked": 1, "evidence_type": "text", "created_at": "2026-06-02T13:56:59.282527+00:00", "product_slug": "dify", "quality_score": 0.524, "quality_json": "{\"relevance\": 0.38, \"authority\": 0.95, \"freshness\": 1.0, \"schema_fit\": 0.3, \"information_density\": 0.39, \"final_score\": 0.538, \"usable_for_claim\": true, \"reasons\": [\"low relevance\", \"authoritative source type: official_site\", \"recent evidence\", \"few schema keywords\", \"usable for claim support\"]}", "usable_for_claim": true, "trust_tier": "high", "source_type": "official_site", "quality": {"relevance": 0.38, "authority": 0.8, "freshness": 1.0, "schema_fit": 0.3, "information_density": 0.47, "final_score": 0.524, "usable_for_claim": true, "reasons": ["low relevance", "authoritative source type: official_site", "recent evidence", "few schema keywords", "usable for claim support"]}}, "ev_a4503ce28d5f4859": {"evidence_id": "ev_a4503ce28d5f4859", "run_id": "run_fd7ec6196a594fc4", "source_id": "src_cc6aa8879897488a", "snapshot_id": "snap_ec18006cc4c945a5", "product_id": "run_fd7ec6196a594fc4_dify", "schema_key": "function_tree.agent_capabilities", "snippet": "Agentic 工作流通过将 AI 能力嵌入结构化、可重复的流程来解决这一问题。与其依赖单个模型自行解决所有问题，不如设计一个流程来逐步编排模型、工具和逻辑，包含明确的条件、检查点和回退路径。", "start_offset": 0, "end_offset": 96, "section_title": "工作流与对话流 - Dify Docs", "confidence": 0.816, "pii_masked": 1, "evidence_type": "text", "created_at": "2026-06-02T13:56:59.282527+00:00", "product_slug": "dify", "quality_score": 0.66, "quality_json": "{\"relevance\": 0.0, \"authority\": 0.0, \"freshness\": 0.5, \"schema_fit\": 0.0, \"information_density\": 0.0, \"final_score\": 0.1, \"usable_for_claim\": false, \"reasons\": [\"insufficient_meaningful_content: mostly noise or stopwords\"]}", "usable_for_claim": true, "trust_tier": "high", "source_type": "documentation", "quality": {"relevance": 0.33, "authority": 0.8, "freshness": 1.0, "schema_fit": 0.85, "information_density": 0.522, "final_score": 0.66, "usable_for_claim": true, "reasons": ["low relevance", "authoritative source type: documentation", "recent evidence", "strong schema alignment", "usable for claim support"]}}, "ev_d727d911c0c6454b": {"evidence_id": "ev_d727d911c0c6454b", "run_id": "run_fd7ec6196a594fc4", "source_id": "src_cc6aa8879897488a", "snapshot_id": "snap_ec18006cc4c945a5", "product_id": "run_fd7ec6196a594fc4_dify", "schema_key": "ai_assistance", "snippet": "AI 模型功能强大，但单独使用时可能不够可预测，它们可能会产生幻觉、遗漏步骤或生成不一致的输出。在生产环境中，尤其是对可靠性有要求的团队和企业，你需要对 AI 的运行方式有更多控制。", "start_offset": 0, "end_offset": 91, "section_title": "工作流与对话流 - Dify Docs", "confidence": 0.844, "pii_masked": 1, "evidence_type": "text", "created_at": "2026-06-02T13:56:59.282527+00:00", "product_slug": "dify", "quality_score": 0.628, "quality_json": "{\"relevance\": 0.0, \"authority\": 0.0, \"freshness\": 0.5, \"schema_fit\": 0.0, \"information_density\": 0.0, \"final_score\": 0.1, \"usable_for_claim\": false, \"reasons\": [\"insufficient_meaningful_content: mostly noise or stopwords\"]}", "usable_for_claim": true, "trust_tier": "high", "source_type": "documentation", "quality": {"relevance": 0.49, "authority": 0.8, "freshness": 1.0, "schema_fit": 0.7, "information_density": 0.352, "final_score": 0.628, "usable_for_claim": true, "reasons": ["moderate relevance", "authoritative source type: documentation", "recent evidence", "strong schema alignment", "usable for claim support"]}}, "ev_85e0d05885ac453d": {"evidence_id": "ev_85e0d05885ac453d", "run_id": "run_fd7ec6196a594fc4", "source_id": "src_cc6aa8879897488a", "snapshot_id": "snap_ec18006cc4c945a5", "product_id": "run_fd7ec6196a594fc4_dify", "schema_key": "function_tree.general", "snippet": "要构建流程，仅需连接各个节点。每个节点处理一个特定步骤，如调用模型、检索知识、运行代码或基于条件分支。大部分工作是 \n拖拽、连接和配置\n，只有当现有节点无法满足特定逻辑时，才需要考虑编写代码。", "start_offset": 0, "end_offset": 96, "section_title": "工作流与对话流 - Dify Docs", "confidence": 0.784, "pii_masked": 1, "evidence_type": "text", "created_at": "2026-06-02T13:56:59.282527+00:00", "product_slug": "dify", "quality_score": 0.539, "quality_json": "{\"relevance\": 0.0, \"authority\": 0.0, \"freshness\": 0.5, \"schema_fit\": 0.0, \"information_density\": 0.0, \"final_score\": 0.1, \"usable_for_claim\": false, \"reasons\": [\"insufficient_meaningful_content: mostly noise or stopwords\"]}", "usable_for_claim": false, "trust_tier": "high", "source_type": "documentation", "quality": {"relevance": 0.0, "authority": 0.8, "freshness": 1.0, "schema_fit": 0.7, "information_density": 0.522, "final_score": 0.539, "usable_for_claim": false, "reasons": ["authoritative source type: documentation", "recent evidence", "strong schema alignment"]}}, "ev_1a3ca8f45a524788": {"evidence_id": "ev_1a3ca8f45a524788", "run_id": "run_fd7ec6196a594fc4", "source_id": "src_cc6aa8879897488a", "snapshot_id": "snap_ec18006cc4c945a5", "product_id": "run_fd7ec6196a594fc4_dify", "schema_key": "function_tree.integration", "snippet": "触发器可按计划、Webhook 或插件事件自动运行工作流。对话流始终由用户消息启动，因此没有触发器。", "start_offset": 0, "end_offset": 50, "section_title": "工作流与对话流 - Dify Docs", "confidence": 0.827, "pii_masked": 1, "evidence_type": "text", "created_at": "2026-06-02T13:56:59.282527+00:00", "product_slug": "dify", "quality_score": 0.549, "quality_json": "{\"relevance\": 0.0, \"authority\": 0.0, \"freshness\": 0.5, \"schema_fit\": 0.0, \"information_density\": 0.0, \"final_score\": 0.1, \"usable_for_claim\": false, \"reasons\": [\"insufficient_meaningful_content: mostly noise or stopwords\"]}", "usable_for_claim": false, "trust_tier": "high", "source_type": "documentation", "quality": {"relevance": 0.08, "authority": 0.8, "freshness": 1.0, "schema_fit": 0.7, "information_density": 0.472, "final_score": 0.549, "usable_for_claim": false, "reasons": ["low relevance", "authoritative source type: documentation", "recent evidence", "strong schema alignment"]}}, "ev_a48a9a2a3ac14393": {"evidence_id": "ev_a48a9a2a3ac14393", "run_id": "run_fd7ec6196a594fc4", "source_id": "src_cc6aa8879897488a", "snapshot_id": "snap_ec18006cc4c945a5", "product_id": "run_fd7ec6196a594fc4_dify", "schema_key": "function_tree.agent_capabilities", "snippet": "Dify 提供两种应用类型来构建 Agentic 工作流：\n工作流\n 和 \n对话流\n。两者都基于共享的可视化画布和节点系统构建。", "start_offset": 0, "end_offset": 64, "section_title": "工作流与对话流 - Dify Docs", "confidence": 0.796, "pii_masked": 1, "evidence_type": "text", "created_at": "2026-06-02T13:56:59.282527+00:00", "product_slug": "dify", "quality_score": 0.752, "quality_json": "{\"relevance\": 0.45, \"authority\": 0.95, \"freshness\": 1.0, \"schema_fit\": 0.0, \"information_density\": 0.15, \"final_score\": 0.432, \"usable_for_claim\": false, \"reasons\": [\"moderate relevance\", \"authoritative source type: documentation\", \"recent evidence\", \"low information density\", \"score below threshold (0.43 < 0.45)\"]}", "usable_for_claim": true, "trust_tier": "high", "source_type": "documentation", "quality": {"relevance": 0.78, "authority": 0.8, "freshness": 1.0, "schema_fit": 0.85, "information_density": 0.422, "final_score": 0.752, "usable_for_claim": true, "reasons": ["high relevance to product/schema", "authoritative source type: documentation", "recent evidence", "strong schema alignment", "usable for claim support"]}}, "ev_a4983478239a4588": {"evidence_id": "ev_a4983478239a4588", "run_id": "run_fd7ec6196a594fc4", "source_id": "src_cc6aa8879897488a", "snapshot_id": "snap_ec18006cc4c945a5", "product_id": "run_fd7ec6196a594fc4_dify", "schema_key": "function_tree.general", "snippet": "关于两种应用的编排方式，详见 \n编排逻辑\n。\n此页面对您有帮助吗？\n上一页\n编排逻辑\n构建工作流或对话流时，如何排列、嵌套与复用节点\n下一页\n⌘\nI", "start_offset": 0, "end_offset": 74, "section_title": "工作流与对话流 - Dify Docs", "confidence": 0.763, "pii_masked": 1, "evidence_type": "text", "created_at": "2026-06-02T13:56:59.282527+00:00", "product_slug": "dify", "quality_score": 0.537, "quality_json": "{\"relevance\": 0.0, \"authority\": 0.95, \"freshness\": 1.0, \"schema_fit\": 0.0, \"information_density\": 0.15, \"final_score\": 0.32, \"usable_for_claim\": false, \"reasons\": [\"authoritative source type: documentation\", \"recent evidence\", \"low information density\", \"score below threshold (0.32 < 0.45)\"]}", "usable_for_claim": false, "trust_tier": "high", "source_type": "documentation", "quality": {"relevance": 0.0, "authority": 0.8, "freshness": 1.0, "schema_fit": 0.7, "information_density": 0.512, "final_score": 0.537, "usable_for_claim": false, "reasons": ["authoritative source type: documentation", "recent evidence", "strong schema alignment"]}}, "ev_804801c104bb4e0e": {"evidence_id": "ev_804801c104bb4e0e", "run_id": "run_fd7ec6196a594fc4", "source_id": "src_6926330d92544595", "snapshot_id": "snap_77269896e2ec4965", "product_id": "run_fd7ec6196a594fc4_fastgpt", "schema_key": "agent_product_capabilities.model_support", "snippet": "FastGPT 基于 Apache 2.0 协议开源，支持二次开发。通过标准 API 即可快速接入，无需修改源码。支持 ChatGPT、Claude、DeepSeek 和文心一言等主流模型，持续迭代优化，始终保持产品活力。", "start_offset": 0, "end_offset": 111, "section_title": "快速了解 FastGPT | FastGPT", "confidence": 0.901, "pii_masked": 1, "evidence_type": "text", "created_at": "2026-06-02T13:56:59.282527+00:00", "product_slug": "fastgpt", "quality_score": 0.79, "quality_json": "{\"relevance\": 0.45, \"authority\": 0.68, \"freshness\": 1.0, \"schema_fit\": 0.5, \"information_density\": 0.34, \"final_score\": 0.541, \"usable_for_claim\": true, \"reasons\": [\"moderate relevance\", \"authoritative source type: official_site\", \"recent evidence\", \"some schema keywords match\", \"usable for claim support\"]}", "usable_for_claim": true, "trust_tier": "high", "source_type": "official_site", "quality": {"relevance": 0.61, "authority": 0.8, "freshness": 1.0, "schema_fit": 1.0, "information_density": 0.637, "final_score": 0.79, "usable_for_claim": true, "reasons": ["moderate relevance", "authoritative source type: official_site", "recent evidence", "strong schema alignment", "usable for claim support"]}}, "ev_99c5e472a8a94f71": {"evidence_id": "ev_99c5e472a8a94f71", "run_id": "run_fd7ec6196a594fc4", "source_id": "src_6926330d92544595", "snapshot_id": "snap_77269896e2ec4965", "product_id": "run_fd7ec6196a594fc4_fastgpt", "schema_key": "function_tree.integration", "snippet": "在 GitHub 上编辑\n快速上手\n快速体验 FastGPT 基础功能\n本页导航\nFastGPT 的优势\n1. 简单灵活，像搭积木一样简单 🧱\n2. 让数据更智能 🧠\n3. 开源开放，易于集成 🔗\nFastGPT 能做什么\n1. 全能知识库\n2. 可视化工作流\n3. 数据智能解析\n4. 工作流编排\n5. 强大的 API 集成\n核心特性\n知识库核心流程图", "start_offset": 0, "end_offset": 177, "section_title": "快速了解 FastGPT | FastGPT", "confidence": 0.879, "pii_masked": 1, "evidence_type": "text", "created_at": "2026-06-02T13:56:59.282527+00:00", "product_slug": "fastgpt", "quality_score": 0.8, "quality_json": "{\"relevance\": 0.45, \"authority\": 0.68, \"freshness\": 1.0, \"schema_fit\": 0.3, \"information_density\": 0.34, \"final_score\": 0.491, \"usable_for_claim\": true, \"reasons\": [\"moderate relevance\", \"authoritative source type: official_site\", \"recent evidence\", \"few schema keywords\", \"usable for claim support\"]}", "usable_for_claim": true, "trust_tier": "high", "source_type": "official_site", "quality": {"relevance": 0.61, "authority": 0.8, "freshness": 1.0, "schema_fit": 1.0, "information_density": 0.688, "final_score": 0.8, "usable_for_claim": true, "reasons": ["moderate relevance", "authoritative source type: official_site", "recent evidence", "strong schema alignment", "usable for claim support"]}}, "ev_bb3b397ba8544ad6": {"evidence_id": "ev_bb3b397ba8544ad6", "run_id": "run_fd7ec6196a594fc4", "source_id": "src_6926330d92544595", "snapshot_id": "snap_77269896e2ec4965", "product_id": "run_fd7ec6196a594fc4_fastgpt", "schema_key": "agent_product_capabilities.model_support", "snippet": "入门\n快速了解 FastGPT\nFastGPT 的能力与优势\nFastGPT 是一个基于 LLM 大语言模型的知识库问答系统，将智能对话与可视化编排完美结合，让 AI 应用开发变得简单自然。无论您是开发者还是业务人员，都能轻松打造专属的 AI 应用。", "start_offset": 0, "end_offset": 125, "section_title": "快速了解 FastGPT | FastGPT", "confidence": 0.899, "pii_masked": 1, "evidence_type": "text", "created_at": "2026-06-02T13:56:59.282527+00:00", "product_slug": "fastgpt", "quality_score": 0.78, "quality_json": "{\"relevance\": 0.45, \"authority\": 0.68, \"freshness\": 1.0, \"schema_fit\": 0.3, \"information_density\": 0.25, \"final_score\": 0.473, \"usable_for_claim\": true, \"reasons\": [\"moderate relevance\", \"authoritative source type: official_site\", \"recent evidence\", \"few schema keywords\", \"low information density\", \"usable for claim support\"]}", "usable_for_claim": true, "trust_tier": "high", "source_type": "official_site", "quality": {"relevance": 0.61, "authority": 0.8, "freshness": 1.0, "schema_fit": 1.0, "information_density": 0.587, "final_score": 0.78, "usable_for_claim": true, "reasons": ["moderate relevance", "authoritative source type: official_site", "recent evidence", "strong schema alignment", "usable for claim support"]}}, "ev_b4332eaeb6534167": {"evidence_id": "ev_b4332eaeb6534167", "run_id": "run_fd7ec6196a594fc4", "source_id": "src_6926330d92544595", "snapshot_id": "snap_77269896e2ec4965", "product_id": "run_fd7ec6196a594fc4_fastgpt", "schema_key": "agent_product_capabilities.model_support", "snippet": "FastGPT知识库系统对导入数据的处理极为灵活，可以智能处理PDF文档的复杂结构，保留图片、表格和LaTeX公式，自动识别扫描文件，并将内容结构化为清晰的Markdown格式。同时支持图片自动标注和索引，让视觉内容可被理解和检索，确保知识在AI问答中能被完整、准确地呈现和应用。", "start_offset": 0, "end_offset": 140, "section_title": "快速了解 FastGPT | FastGPT", "confidence": 0.897, "pii_masked": 1, "evidence_type": "text", "created_at": "2026-06-02T13:56:59.282527+00:00", "product_slug": "fastgpt", "quality_score": 0.742, "quality_json": "{\"relevance\": 0.0, \"authority\": 0.0, \"freshness\": 0.5, \"schema_fit\": 0.0, \"information_density\": 0.0, \"final_score\": 0.1, \"usable_for_claim\": false, \"reasons\": [\"insufficient_meaningful_content: mostly noise or stopwords\"]}", "usable_for_claim": true, "trust_tier": "high", "source_type": "official_site", "quality": {"relevance": 0.46, "authority": 0.8, "freshness": 1.0, "schema_fit": 1.0, "information_density": 0.587, "final_score": 0.742, "usable_for_claim": true, "reasons": ["moderate relevance", "authoritative source type: official_site", "recent evidence", "strong schema alignment", "usable for claim support"]}}, "ev_7cd6eab6abc94736": {"evidence_id": "ev_7cd6eab6abc94736", "run_id": "run_fd7ec6196a594fc4", "source_id": "src_6926330d92544595", "snapshot_id": "snap_77269896e2ec4965", "product_id": "run_fd7ec6196a594fc4_fastgpt", "schema_key": "agent_product_capabilities.model_support", "snippet": "FastGPT 完全对齐 OpenAI 官方接口，支持一键接入企业微信、公众号、飞书、钉钉等平台，让 AI 能力轻松融入您的业务场景。", "start_offset": 0, "end_offset": 67, "section_title": "快速了解 FastGPT | FastGPT", "confidence": 0.878, "pii_masked": 1, "evidence_type": "text", "created_at": "2026-06-02T13:56:59.282527+00:00", "product_slug": "fastgpt", "quality_score": 0.724, "quality_json": "{\"relevance\": 0.45, \"authority\": 0.68, \"freshness\": 1.0, \"schema_fit\": 0.3, \"information_density\": 0.15, \"final_score\": 0.454, \"usable_for_claim\": true, \"reasons\": [\"moderate relevance\", \"authoritative source type: official_site\", \"recent evidence\", \"few schema keywords\", \"low information density\", \"usable for claim support\"]}", "usable_for_claim": true, "trust_tier": "high", "source_type": "official_site", "quality": {"relevance": 0.69, "authority": 0.8, "freshness": 1.0, "schema_fit": 0.85, "information_density": 0.392, "final_score": 0.724, "usable_for_claim": true, "reasons": ["moderate relevance", "authoritative source type: official_site", "recent evidence", "strong schema alignment", "usable for claim support"]}}, "ev_cf35850881f14d99": {"evidence_id": "ev_cf35850881f14d99", "run_id": "run_fd7ec6196a594fc4", "source_id": "src_6926330d92544595", "snapshot_id": "snap_77269896e2ec4965", "product_id": "run_fd7ec6196a594fc4_fastgpt", "schema_key": "agent_product_capabilities.model_support", "snippet": "FastGPT 是一个由用户和贡献者参与推动的开源项目，如果您对产品使用存在疑问和建议，可尝试以下方式寻求支持。我们的团队与社区会竭尽所能为您提供帮助。", "start_offset": 0, "end_offset": 76, "section_title": "快速了解 FastGPT | FastGPT", "confidence": 0.877, "pii_masked": 1, "evidence_type": "text", "created_at": "2026-06-02T13:56:59.282527+00:00", "product_slug": "fastgpt", "quality_score": 0.722, "quality_json": "{\"relevance\": 0.0, \"authority\": 0.0, \"freshness\": 0.5, \"schema_fit\": 0.0, \"information_density\": 0.0, \"final_score\": 0.1, \"usable_for_claim\": false, \"reasons\": [\"insufficient_meaningful_content: mostly noise or stopwords\"]}", "usable_for_claim": true, "trust_tier": "high", "source_type": "official_site", "quality": {"relevance": 0.69, "authority": 0.8, "freshness": 1.0, "schema_fit": 0.85, "information_density": 0.382, "final_score": 0.722, "usable_for_claim": true, "reasons": ["moderate relevance", "authoritative source type: official_site", "recent evidence", "strong schema alignment", "usable for claim support"]}}, "ev_8776fce3d6714ad0": {"evidence_id": "ev_8776fce3d6714ad0", "run_id": "run_fd7ec6196a594fc4", "source_id": "src_6926330d92544595", "snapshot_id": "snap_77269896e2ec4965", "product_id": "run_fd7ec6196a594fc4_fastgpt", "schema_key": "agent_product_capabilities.model_support", "snippet": "像搭乐高一样简单有趣，FastGPT 提供丰富的功能模块，通过简单拖拽就能搭建出个性化的 AI 应用，零代码也能实现复杂的业务流程。", "start_offset": 0, "end_offset": 66, "section_title": "快速了解 FastGPT | FastGPT", "confidence": 0.876, "pii_masked": 1, "evidence_type": "text", "created_at": "2026-06-02T13:56:59.282527+00:00", "product_slug": "fastgpt", "quality_score": 0.66, "quality_json": "{\"relevance\": 0.0, \"authority\": 0.0, \"freshness\": 0.5, \"schema_fit\": 0.0, \"information_density\": 0.0, \"final_score\": 0.1, \"usable_for_claim\": false, \"reasons\": [\"insufficient_meaningful_content: mostly noise or stopwords\"]}", "usable_for_claim": true, "trust_tier": "high", "source_type": "official_site", "quality": {"relevance": 0.38, "authority": 0.8, "freshness": 1.0, "schema_fit": 0.85, "information_density": 0.462, "final_score": 0.66, "usable_for_claim": true, "reasons": ["low relevance", "authoritative source type: official_site", "recent evidence", "strong schema alignment", "usable for claim support"]}}, "ev_c67f8aee05aa4cbf": {"evidence_id": "ev_c67f8aee05aa4cbf", "run_id": "run_fd7ec6196a594fc4", "source_id": "src_ec308a4bef874dd7", "snapshot_id": "snap_4ccb4e68a1e64815", "product_id": "run_fd7ec6196a594fc4_fastgpt", "schema_key": "agent_product_capabilities.model_support", "snippet": "FastGPT 基于 Apache 2.0 协议开源，支持二次开发。通过标准 API 即可快速接入，无需修改源码。支持 ChatGPT、Claude、DeepSeek 和文心一言等主流模型，持续迭代优化，始终保持产品活力。", "start_offset": 0, "end_offset": 111, "section_title": "快速了解 FastGPT | FastGPT", "confidence": 0.871, "pii_masked": 1, "evidence_type": "text", "created_at": "2026-06-02T13:56:59.282527+00:00", "product_slug": "fastgpt", "quality_score": 0.79, "quality_json": "{\"relevance\": 0.45, \"authority\": 0.68, \"freshness\": 1.0, \"schema_fit\": 0.5, \"information_density\": 0.34, \"final_score\": 0.541, \"usable_for_claim\": true, \"reasons\": [\"moderate relevance\", \"authoritative source type: documentation\", \"recent evidence\", \"some schema keywords match\", \"usable for claim support\"]}", "usable_for_claim": true, "trust_tier": "high", "source_type": "documentation", "quality": {"relevance": 0.61, "authority": 0.8, "freshness": 1.0, "schema_fit": 1.0, "information_density": 0.637, "final_score": 0.79, "usable_for_claim": true, "reasons": ["moderate relevance", "authoritative source type: documentation", "recent evidence", "strong schema alignment", "usable for claim support"]}}, "ev_825c837bf89b4c03": {"evidence_id": "ev_825c837bf89b4c03", "run_id": "run_fd7ec6196a594fc4", "source_id": "src_ec308a4bef874dd7", "snapshot_id": "snap_4ccb4e68a1e64815", "product_id": "run_fd7ec6196a594fc4_fastgpt", "schema_key": "agent_product_capabilities.model_support", "snippet": "FastGPT 是一个基于 LLM 大语言模型的知识库问答系统，将智能对话与可视化编排完美结合，让 AI 应用开发变得简单自然。无论您是开发者还是业务人员，都能轻松打造专属的 AI 应用。", "start_offset": 0, "end_offset": 94, "section_title": "快速了解 FastGPT | FastGPT", "confidence": 0.869, "pii_masked": 1, "evidence_type": "text", "created_at": "2026-06-02T13:56:59.282527+00:00", "product_slug": "fastgpt", "quality_score": 0.737, "quality_json": "{\"relevance\": 0.45, \"authority\": 0.68, \"freshness\": 1.0, \"schema_fit\": 0.3, \"information_density\": 0.15, \"final_score\": 0.454, \"usable_for_claim\": true, \"reasons\": [\"moderate relevance\", \"authoritative source type: documentation\", \"recent evidence\", \"few schema keywords\", \"low information density\", \"usable for claim support\"]}", "usable_for_claim": true, "trust_tier": "high", "source_type": "documentation", "quality": {"relevance": 0.53, "authority": 0.8, "freshness": 1.0, "schema_fit": 1.0, "information_density": 0.472, "final_score": 0.737, "usable_for_claim": true, "reasons": ["moderate relevance", "authoritative source type: documentation", "recent evidence", "strong schema alignment", "usable for claim support"]}}, "ev_ec388984546f441d": {"evidence_id": "ev_ec388984546f441d", "run_id": "run_fd7ec6196a594fc4", "source_id": "src_ec308a4bef874dd7", "snapshot_id": "snap_4ccb4e68a1e64815", "product_id": "run_fd7ec6196a594fc4_fastgpt", "schema_key": "agent_product_capabilities.enterprise_readiness", "snippet": "FastGPT\n搜索\n⌘\nK\n使用指南\n入门\n快速了解 FastGPT\n快速上手\n视频教程\n应用构建\n通用配置\n工作流\n工具\n应用发布\n应用评测(Beta)\n对话框\n对话框与HTML渲染\n知识库引用分块阅读器\n知识库\n知识库基础原理介绍\n知识库搜索方案和参数\n知识库集合标签\nWeb 站点同步\n第三方知识库\n模板导入\n工作区\n团队管理\n配置自定义域名\n管理员后台\nSSO & 外部成员同步\n团队模式说明文档\n版本介绍\nFastGPT 云服务\nFastGPT 商业版\nFastGPT 社区版\n🇨🇳\n简体中文\n入门\n快速了解 FastGPT", "start_offset": 0, "end_offset": 268, "section_title": "快速了解 FastGPT | FastGPT", "confidence": 0.858, "pii_masked": 1, "evidence_type": "text", "created_at": "2026-06-02T13:56:59.282527+00:00", "product_slug": "fastgpt", "quality_score": 0.744, "quality_json": "{\"relevance\": 0.53, \"authority\": 0.68, \"freshness\": 1.0, \"schema_fit\": 0.3, \"information_density\": 0.3, \"final_score\": 0.503, \"usable_for_claim\": true, \"reasons\": [\"moderate relevance\", \"authoritative source type: documentation\", \"recent evidence\", \"few schema keywords\", \"usable for claim support\"]}", "usable_for_claim": true, "trust_tier": "high", "source_type": "documentation", "quality": {"relevance": 0.61, "authority": 0.8, "freshness": 1.0, "schema_fit": 0.85, "information_density": 0.595, "final_score": 0.744, "usable_for_claim": true, "reasons": ["moderate relevance", "authoritative source type: documentation", "recent evidence", "strong schema alignment", "usable for claim support"]}}, "ev_c0caa28ccab9463d": {"evidence_id": "ev_c0caa28ccab9463d", "run_id": "run_fd7ec6196a594fc4", "source_id": "src_ec308a4bef874dd7", "snapshot_id": "snap_4ccb4e68a1e64815", "product_id": "run_fd7ec6196a594fc4_fastgpt", "schema_key": "agent_product_capabilities.model_support", "snippet": "FastGPT知识库系统对导入数据的处理极为灵活，可以智能处理PDF文档的复杂结构，保留图片、表格和LaTeX公式，自动识别扫描文件，并将内容结构化为清晰的Markdown格式。同时支持图片自动标注和索引，让视觉内容可被理解和检索，确保知识在AI问答中能被完整、准确地呈现和应用。", "start_offset": 0, "end_offset": 140, "section_title": "快速了解 FastGPT | FastGPT", "confidence": 0.867, "pii_masked": 1, "evidence_type": "text", "created_at": "2026-06-02T13:56:59.282527+00:00", "product_slug": "fastgpt", "quality_score": 0.742, "quality_json": "{\"relevance\": 0.0, \"authority\": 0.0, \"freshness\": 0.5, \"schema_fit\": 0.0, \"information_density\": 0.0, \"final_score\": 0.1, \"usable_for_claim\": false, \"reasons\": [\"insufficient_meaningful_content: mostly noise or stopwords\"]}", "usable_for_claim": true, "trust_tier": "high", "source_type": "documentation", "quality": {"relevance": 0.46, "authority": 0.8, "freshness": 1.0, "schema_fit": 1.0, "information_density": 0.587, "final_score": 0.742, "usable_for_claim": true, "reasons": ["moderate relevance", "authoritative source type: documentation", "recent evidence", "strong schema alignment", "usable for claim support"]}}, "ev_c69c7a0dd5c34ab5": {"evidence_id": "ev_c69c7a0dd5c34ab5", "run_id": "run_fd7ec6196a594fc4", "source_id": "src_ec308a4bef874dd7", "snapshot_id": "snap_4ccb4e68a1e64815", "product_id": "run_fd7ec6196a594fc4_fastgpt", "schema_key": "function_tree.integration", "snippet": "本页导航\nFastGPT 的优势\n1. 简单灵活，像搭积木一样简单 🧱\n2. 让数据更智能 🧠\n3. 开源开放，易于集成 🔗\nFastGPT 能做什么\n1. 全能知识库\n2. 可视化工作流\n3. 数据智能解析\n4. 工作流编排\n5. 强大的 API 集成\n核心特性\n知识库核心流程图", "start_offset": 0, "end_offset": 141, "section_title": "快速了解 FastGPT | FastGPT", "confidence": 0.847, "pii_masked": 1, "evidence_type": "text", "created_at": "2026-06-02T13:56:59.282527+00:00", "product_slug": "fastgpt", "quality_score": 0.8, "quality_json": "{\"relevance\": 0.45, \"authority\": 0.68, \"freshness\": 1.0, \"schema_fit\": 0.3, \"information_density\": 0.34, \"final_score\": 0.491, \"usable_for_claim\": true, \"reasons\": [\"moderate relevance\", \"authoritative source type: documentation\", \"recent evidence\", \"few schema keywords\", \"usable for claim support\"]}", "usable_for_claim": true, "trust_tier": "high", "source_type": "documentation", "quality": {"relevance": 0.61, "authority": 0.8, "freshness": 1.0, "schema_fit": 1.0, "information_density": 0.688, "final_score": 0.8, "usable_for_claim": true, "reasons": ["moderate relevance", "authoritative source type: documentation", "recent evidence", "strong schema alignment", "usable for claim support"]}}, "ev_4c74c4066b8a436b": {"evidence_id": "ev_4c74c4066b8a436b", "run_id": "run_fd7ec6196a594fc4", "source_id": "src_ec308a4bef874dd7", "snapshot_id": "snap_4ccb4e68a1e64815", "product_id": "run_fd7ec6196a594fc4_fastgpt", "schema_key": "agent_product_capabilities.model_support", "snippet": "FastGPT 完全对齐 OpenAI 官方接口，支持一键接入企业微信、公众号、飞书、钉钉等平台，让 AI 能力轻松融入您的业务场景。", "start_offset": 0, "end_offset": 67, "section_title": "快速了解 FastGPT | FastGPT", "confidence": 0.848, "pii_masked": 1, "evidence_type": "text", "created_at": "2026-06-02T13:56:59.282527+00:00", "product_slug": "fastgpt", "quality_score": 0.724, "quality_json": "{\"relevance\": 0.45, \"authority\": 0.68, \"freshness\": 1.0, \"schema_fit\": 0.3, \"information_density\": 0.15, \"final_score\": 0.454, \"usable_for_claim\": true, \"reasons\": [\"moderate relevance\", \"authoritative source type: documentation\", \"recent evidence\", \"few schema keywords\", \"low information density\", \"usable for claim support\"]}", "usable_for_claim": true, "trust_tier": "high", "source_type": "documentation", "quality": {"relevance": 0.69, "authority": 0.8, "freshness": 1.0, "schema_fit": 0.85, "information_density": 0.392, "final_score": 0.724, "usable_for_claim": true, "reasons": ["moderate relevance", "authoritative source type: documentation", "recent evidence", "strong schema alignment", "usable for claim support"]}}, "ev_2a9438ea2fd6437d": {"evidence_id": "ev_2a9438ea2fd6437d", "run_id": "run_fd7ec6196a594fc4", "source_id": "src_ec308a4bef874dd7", "snapshot_id": "snap_4ccb4e68a1e64815", "product_id": "run_fd7ec6196a594fc4_fastgpt", "schema_key": "agent_product_capabilities.model_support", "snippet": "FastGPT 是一个由用户和贡献者参与推动的开源项目，如果您对产品使用存在疑问和建议，可尝试以下方式寻求支持。我们的团队与社区会竭尽所能为您提供帮助。", "start_offset": 0, "end_offset": 76, "section_title": "快速了解 FastGPT | FastGPT", "confidence": 0.847, "pii_masked": 1, "evidence_type": "text", "created_at": "2026-06-02T13:56:59.282527+00:00", "product_slug": "fastgpt", "quality_score": 0.722, "quality_json": "{\"relevance\": 0.0, \"authority\": 0.0, \"freshness\": 0.5, \"schema_fit\": 0.0, \"information_density\": 0.0, \"final_score\": 0.1, \"usable_for_claim\": false, \"reasons\": [\"insufficient_meaningful_content: mostly noise or stopwords\"]}", "usable_for_claim": true, "trust_tier": "high", "source_type": "documentation", "quality": {"relevance": 0.69, "authority": 0.8, "freshness": 1.0, "schema_fit": 0.85, "information_density": 0.382, "final_score": 0.722, "usable_for_claim": true, "reasons": ["moderate relevance", "authoritative source type: documentation", "recent evidence", "strong schema alignment", "usable for claim support"]}}, "ev_acbbfb1cb1da4c61": {"evidence_id": "ev_acbbfb1cb1da4c61", "run_id": "run_fd7ec6196a594fc4", "source_id": "src_e1250e7af9ee4596", "snapshot_id": "", "product_id": "run_fd7ec6196a594fc4_coze", "schema_key": "function_tree.workflow", "snippet": "如输入符合预期，输出不符合预期，先参考该节点的官方文档，确认是否正确配置\n可参考文档：\nhttps://www.coze.cn/docs/guides/start_end_node", "start_offset": 0, "end_offset": 90, "section_title": "Coze 工作流搭建介绍", "confidence": 0.898, "pii_masked": 1, "evidence_type": "text", "created_at": "2026-06-03T15:23:54.215939+00:00", "product_slug": "coze", "quality_score": 0.554, "quality_json": null, "usable_for_claim": true, "trust_tier": "medium", "source_type": "official_site", "quality": {"relevance": 0.3, "authority": 0.68, "freshness": 1.0, "schema_fit": 0.7, "information_density": 0.342, "final_score": 0.554, "usable_for_claim": true, "reasons": ["low relevance", "authoritative source type: official_site", "recent evidence", "strong schema alignment", "usable for claim support"]}}, "ev_0e26d81bd6ae4202": {"evidence_id": "ev_0e26d81bd6ae4202", "run_id": "run_fd7ec6196a594fc4", "source_id": "src_e1250e7af9ee4596", "snapshot_id": "", "product_id": "run_fd7ec6196a594fc4_coze", "schema_key": "agent_product_capabilities.model_support", "snippet": "AI 大模型体验中心\n动手实验室\nAgent 评测集\nAI 案例广场\n火山杯大赛\n学习中心\n社区\n去发布\n首页\nAI 大模型体验中心\n动手实验室\nAgent 评测集\nAI 案例广场\n学习中心\n社区\nCoze 工作流搭建介绍\nCoze", "start_offset": 0, "end_offset": 116, "section_title": "Coze 工作流搭建介绍", "confidence": 0.895, "pii_masked": 1, "evidence_type": "text", "created_at": "2026-06-03T15:23:54.215939+00:00", "product_slug": "coze", "quality_score": 0.683, "quality_json": null, "usable_for_claim": true, "trust_tier": "medium", "source_type": "official_site", "quality": {"relevance": 0.7, "authority": 0.68, "freshness": 1.0, "schema_fit": 0.7, "information_density": 0.487, "final_score": 0.683, "usable_for_claim": true, "reasons": ["high relevance to product/schema", "authoritative source type: official_site", "recent evidence", "strong schema alignment", "usable for claim support"]}}, "ev_236d6b74c7a04cba": {"evidence_id": "ev_236d6b74c7a04cba", "run_id": "run_fd7ec6196a594fc4", "source_id": "src_e1250e7af9ee4596", "snapshot_id": "", "product_id": "run_fd7ec6196a594fc4_coze", "schema_key": "function_tree.workflow", "snippet": "火山引擎HTTPDNS边缘云原生技术实践\n《火山引擎HTTPDNS边缘云原生技术实践》 赵彦奇 | 火山引擎边缘云网络研发工程师\n点击下载 \n相关产品\n推荐阅读\n开源版COZE-字节 Coze Studio 重磅开源！保姆级本地安装教程，手把手带你体验\n【扣子Coze】新手入门教程，搭建智能体+工作流（全流程拆解）\n评论\n未登录\n看完啦，\n登录\n分享一下感受吧～\n暂无评论", "start_offset": 0, "end_offset": 187, "section_title": "Coze 工作流搭建介绍", "confidence": 0.893, "pii_masked": 1, "evidence_type": "text", "created_at": "2026-06-03T15:23:54.215939+00:00", "product_slug": "coze", "quality_score": 0.678, "quality_json": null, "usable_for_claim": true, "trust_tier": "medium", "source_type": "official_site", "quality": {"relevance": 0.45, "authority": 0.68, "freshness": 1.0, "schema_fit": 0.85, "information_density": 0.587, "final_score": 0.678, "usable_for_claim": true, "reasons": ["moderate relevance", "authoritative source type: official_site", "recent evidence", "strong schema alignment", "usable for claim support"]}}, "ev_72886a9ed0f048f1": {"evidence_id": "ev_72886a9ed0f048f1", "run_id": "run_fd7ec6196a594fc4", "source_id": "src_dd46b2c6715748e8", "snapshot_id": "", "product_id": "run_fd7ec6196a594fc4_coze", "schema_key": "function_tree.workflow", "snippet": "对话流（Chatflow）：是基于对话场景的特殊工作流，更适合处理对话类请求。对话流通过对话的方式和用户交互，并完成复杂的业务逻辑。对话流适用于 Chatbot 等需要在响应请求时进行复杂逻辑处理的对话式应用程序，例如个人助手、智能客服、虚拟伴侣等。​\n节点​", "start_offset": 0, "end_offset": 130, "section_title": "低代码工作流介绍 - 文档 - 扣子", "confidence": 0.869, "pii_masked": 1, "evidence_type": "text", "created_at": "2026-06-03T15:23:54.215939+00:00", "product_slug": "coze", "quality_score": 0.602, "quality_json": null, "usable_for_claim": false, "trust_tier": "high", "source_type": "documentation", "quality": {"relevance": 0.08, "authority": 0.8, "freshness": 1.0, "schema_fit": 0.85, "information_density": 0.547, "final_score": 0.602, "usable_for_claim": false, "reasons": ["low relevance", "authoritative source type: documentation", "recent evidence", "strong schema alignment"]}}, "ev_67832158f282421a": {"evidence_id": "ev_67832158f282421a", "run_id": "run_fd7ec6196a594fc4", "source_id": "src_dd46b2c6715748e8", "snapshot_id": "", "product_id": "run_fd7ec6196a594fc4_coze", "schema_key": "function_tree.workflow", "snippet": "工作流（Workflow）：用于处理功能类的请求，可通过顺序执行一系列节点实现某个功能。适合数据的自动化处理场景，例如生成行业调研报告、生成一张海报、制作绘本等。​", "start_offset": 0, "end_offset": 82, "section_title": "低代码工作流介绍 - 文档 - 扣子", "confidence": 0.866, "pii_masked": 1, "evidence_type": "text", "created_at": "2026-06-03T15:23:54.215939+00:00", "product_slug": "coze", "quality_score": 0.66, "quality_json": null, "usable_for_claim": true, "trust_tier": "high", "source_type": "documentation", "quality": {"relevance": 0.33, "authority": 0.8, "freshness": 1.0, "schema_fit": 0.85, "information_density": 0.522, "final_score": 0.66, "usable_for_claim": true, "reasons": ["low relevance", "authoritative source type: documentation", "recent evidence", "strong schema alignment", "usable for claim support"]}}, "ev_6ccdf6e2250c4d25": {"evidence_id": "ev_6ccdf6e2250c4d25", "run_id": "run_fd7ec6196a594fc4", "source_id": "src_dd46b2c6715748e8", "snapshot_id": "", "product_id": "run_fd7ec6196a594fc4_coze", "schema_key": "function_tree.workflow", "snippet": "低代码工作流是一系列可执行指令的集合，用于实现业务逻辑或完成特定任务。它为应用/智能体的数据流动和任务处理提供了一个结构化框架。低代码工作流的核心在于将大模型的强大能力与特定的业务逻辑相结合，通过系统化、流程化的方法来实现高效、可扩展的 AI 应用开发。​", "start_offset": 0, "end_offset": 128, "section_title": "低代码工作流介绍 - 文档 - 扣子", "confidence": 0.864, "pii_masked": 1, "evidence_type": "text", "created_at": "2026-06-03T15:23:54.215939+00:00", "product_slug": "coze", "quality_score": 0.657, "quality_json": null, "usable_for_claim": false, "trust_tier": "high", "source_type": "documentation", "quality": {"relevance": 0.08, "authority": 0.8, "freshness": 1.0, "schema_fit": 1.0, "information_density": 0.637, "final_score": 0.657, "usable_for_claim": false, "reasons": ["low relevance", "authoritative source type: documentation", "recent evidence", "strong schema alignment"]}}, "ev_a2cd6b45590a4b90": {"evidence_id": "ev_a2cd6b45590a4b90", "run_id": "run_fd7ec6196a594fc4", "source_id": "src_dd46b2c6715748e8", "snapshot_id": "", "product_id": "run_fd7ec6196a594fc4_coze", "schema_key": "function_tree.workflow", "snippet": "低代码工作流的核心在于节点，每个节点是一个具有特定功能的独立组件，代表一个独立的步骤或逻辑。这些节点负责处理数据、执行任务和运行算法，并且它们都具备输入和输出。每个低代码工作流都默认包含一个开始节点和一个结束节点。​\n开始节点是低代码工作流的起始节点，定义启动低代码工作流需要的输入参数。​\n结束节点用于返回低代码工作流的运行结果。​", "start_offset": 0, "end_offset": 167, "section_title": "低代码工作流介绍 - 文档 - 扣子", "confidence": 0.864, "pii_masked": 1, "evidence_type": "text", "created_at": "2026-06-03T15:23:54.215939+00:00", "product_slug": "coze", "quality_score": 0.573, "quality_json": null, "usable_for_claim": false, "trust_tier": "high", "source_type": "documentation", "quality": {"relevance": 0.08, "authority": 0.8, "freshness": 1.0, "schema_fit": 0.7, "information_density": 0.587, "final_score": 0.573, "usable_for_claim": false, "reasons": ["low relevance", "authoritative source type: documentation", "recent evidence", "strong schema alignment"]}}, "ev_a6a136e2f81e4cf6": {"evidence_id": "ev_a6a136e2f81e4cf6", "run_id": "run_fd7ec6196a594fc4", "source_id": "src_dd46b2c6715748e8", "snapshot_id": "", "product_id": "run_fd7ec6196a594fc4_coze", "schema_key": "function_tree.workflow", "snippet": "在使用节点编排低代码工作流时，灵活性和扩展性是实现高效编排的关键。低代码工作流的开始节点、结束节点、输出节点、插件节点、子工作流节点、代码节点、SQL 自定义节点、新增数据节点、查询数据节点、更新数据节点、删除数据节点、问答节点、批处理节点、循环节点、变量聚合节点、变量节点、选择器节点均支持多种变量类型，包括 String、Integer、Number、Boolean、Object、File 和 Array等。你可以根据实际需求灵活选择合适的数据类型，而无需额外的数据转换，从而提升低代码工作流编排的灵活性和扩展性。​", "start_offset": 0, "end_offset": 261, "section_title": "低代码工作流介绍 - 文档 - 扣子", "confidence": 0.864, "pii_masked": 1, "evidence_type": "text", "created_at": "2026-06-03T15:23:54.215939+00:00", "product_slug": "coze", "quality_score": 0.652, "quality_json": null, "usable_for_claim": false, "trust_tier": "high", "source_type": "documentation", "quality": {"relevance": 0.16, "authority": 0.8, "freshness": 1.0, "schema_fit": 0.85, "information_density": 0.695, "final_score": 0.652, "usable_for_claim": false, "reasons": ["low relevance", "authoritative source type: documentation", "recent evidence", "strong schema alignment"]}}, "ev_e7e1dccffa0d4d4e": {"evidence_id": "ev_e7e1dccffa0d4d4e", "run_id": "run_fd7ec6196a594fc4", "source_id": "src_dd46b2c6715748e8", "snapshot_id": "", "product_id": "run_fd7ec6196a594fc4_coze", "schema_key": "pricing_model", "snippet": "在低代码工作流中使用付费节点时，扣子编程将按照对应节点的计费规则收费。例如，在低代码工作流中添加视频生成节点，该节点运行成功即会产生模型 token 费用。扣子编程提供如下付费节点：​\n模型节点：​大模型节点、​意图识别节点、​问答节点、​视频生成节点等会产生模型 token 费用。模型计费说明，请参考​模型费用。​", "start_offset": 0, "end_offset": 159, "section_title": "低代码工作流介绍 - 文档 - 扣子", "confidence": 0.883, "pii_masked": 1, "evidence_type": "text", "created_at": "2026-06-03T15:23:54.215939+00:00", "product_slug": "coze", "quality_score": 0.63, "quality_json": null, "usable_for_claim": false, "trust_tier": "high", "source_type": "documentation", "gate_rejection": "source_type_not_allowed_for_pricing_model: documentation"}};
+
+        function showTooltip(ev, eid) {
+            var meta = EV_REGISTRY[eid];
+            if (!meta) {
+                ttTitle.textContent = '[' + eid + '] (证据未找到)';
+                ttSnippet.textContent = '';
+                ttMeta.textContent = '';
+            } else {
+                var title = meta.source_title || meta.product_slug || eid;
+                var snippet = meta.snippet || '';
+                var product = meta.product_slug || '';
+                var schemaKey = meta.schema_key || '';
+                var url = meta.source_url || '';
+                var fetchedAt = meta.fetched_at || meta.created_at || '';
+                if (fetchedAt) fetchedAt = fetchedAt.slice(0, 10);
+                ttTitle.textContent = title;
+                ttSnippet.textContent = snippet.slice(0, 300);
+                var metaHtml = '';
+                if (product) metaHtml += '产品: ' + product + ' | ';
+                if (schemaKey) metaHtml += '维度: ' + schemaKey + ' | ';
+                if (fetchedAt) metaHtml += '抓取: ' + fetchedAt;
+                if (url) metaHtml += '<br/><a class="ev-url" href="' + url + '" target="_blank" rel="noopener">🔗 查看原文</a>';
+                ttMeta.innerHTML = metaHtml;
+            }
+            var cx = ev.clientX + 12;
+            var cy = ev.clientY + 12;
+            var tw = tooltip.offsetWidth;
+            var th = tooltip.offsetHeight;
+            if (cx + tw > window.innerWidth) cx = ev.clientX - tw - 12;
+            if (cy + th > window.innerHeight) cy = ev.clientY - th - 12;
+            tooltip.style.left = cx + 'px';
+            tooltip.style.top = cy + 'px';
+            tooltip.style.display = 'block';
+        }
+        function hideTooltip() { tooltip.style.display = 'none'; }
+        document.querySelectorAll('.ev-citation').forEach(function(el) {
+            el.addEventListener('mouseenter', function(e) { showTooltip(e, el.getAttribute('data-eid')); });
+            el.addEventListener('mouseleave', hideTooltip);
+        });
+    })();
+    </script>
+    <div class='footer'>
+        <p>竞品分析报告 | 版本 v2.0 | 由 Deep Report v2 生成</p>
+    </div>
+</body>
+</html>

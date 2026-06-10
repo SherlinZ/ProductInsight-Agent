@@ -1,0 +1,33 @@
+{
+  "run_id": "run_fd7ec6196a594fc4",
+  "products": [
+    "Dify",
+    "Coze",
+    "FastGPT"
+  ],
+  "evidence_count": 39,
+  "claims_count": 14,
+  "evidence_gate": {
+    "passed": true,
+    "rejected": 1
+  },
+  "render_context": {
+    "passed": true,
+    "coverage": {
+      "Dify": 0.0,
+      "Coze": 0.0,
+      "FastGPT": 0.0
+    },
+    "zero": [
+      "Dify",
+      "Coze",
+      "FastGPT"
+    ],
+    "partial": [],
+    "ready": []
+  },
+  "report_status": {
+    "passed": true,
+    "status": "blocked_consistency"
+  }
+}
