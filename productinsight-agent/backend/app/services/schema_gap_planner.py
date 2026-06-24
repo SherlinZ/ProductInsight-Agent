@@ -48,6 +48,9 @@ SCHEMA_KEY_NORMALIZATION = {
     "agent": "agent_builder",
     "agentic": "agent_builder",
     "bot": "agent_builder",
+    "ai_assistance": "agent_builder",
+    "ai_agent": "agent_builder",
+    "ai_chatbot": "agent_builder",
     # tool
     "tool_calling": "tool_calling",
     "tool": "tool_calling",
@@ -219,11 +222,21 @@ class SchemaGapPlanner:
         if not products:
             return [], self._empty_coverage_summary(run_id)
 
+        # Build slug map: {raw_slug (possibly prefixed with run_id): clean_slug}
+        slug_map: dict[str, str] = {}
+        for product in products:
+            clean_slug = self._normalize_product_slug(product)
+            slug_map[clean_slug] = clean_slug
+            # Also register with any run-prefixed slug found in facts/evidence
+            if product.get("product_id"):
+                prefixed = f"{run_id}-{product['product_id'].lower()}"
+                slug_map[prefixed] = clean_slug
+
         # Build fact map: {(product_slug, normalized_schema_key): fact}
-        fact_map = self._build_fact_map(facts)
+        fact_map = self._build_fact_map(facts, slug_map)
 
         # Build evidence map: {(product_slug, normalized_schema_key): [evidence]}
-        evidence_map = self._build_evidence_map(evidence_items)
+        evidence_map = self._build_evidence_map(evidence_items, slug_map)
 
         # Build evidence_by_id: {evidence_id: evidence}
         evidence_by_id: dict[str, dict[str, Any]] = {}
@@ -296,6 +309,23 @@ class SchemaGapPlanner:
             slug = pid.lower().replace(" ", "-").replace("_", "-")
         return slug
 
+    def _strip_run_prefix(self, slug: str) -> str:
+        """Strip run_id prefix from slug if present.
+
+        Facts/evidence items may have slugs like 'run-00837a35a9034e99-dify'
+        that need to be normalized to 'dify' to match task_brief product slugs.
+        The run_id uses underscores (run_00837...) but the prefix in slugs
+        uses dashes (run-00837...) due to lowercasing/underscore replacement.
+        """
+        if not slug:
+            return slug
+        import re
+        # Handle both 'run_<hex>-<slug>' (underscore after 'run') and 'run-<hex>-<slug>'
+        m = re.match(r'^run[-_][0-9a-f]+[-_](.+)$', slug)
+        if m:
+            return m.group(1)
+        return slug
+
     def _normalize_schema_key(self, raw_key: str) -> str:
         """Normalize a raw schema key to canonical form.
 
@@ -328,19 +358,20 @@ class SchemaGapPlanner:
         if not tokens:
             return key_lower
 
-        # 3. Check if any required schema key is contained in the original key
-        # This handles cases like "private_deployment" in "deployment_options.private_deployment"
+        # 3. Bidirectional substring check: only match if the shorter string
+        # appears as a prefix of the longer one (e.g. "workflow" -> "workflow_orchestration").
+        # Avoids false positives like "ai_assistance" -> "free_tier" (shared "tier" suffix).
         for required_key in self._schema_key_set:
-            if required_key in key_lower:
+            if required_key.startswith(key_lower) or key_lower.startswith(required_key):
                 return required_key
 
         # 4. Try to match from most specific (last token) to least specific (first token)
         for token in reversed(tokens):
             if token in SCHEMA_KEY_NORMALIZATION:
                 return SCHEMA_KEY_NORMALIZATION[token]
-            # Also check if token contains a required key
+            # Also check prefix-based bidirectional match
             for required_key in self._schema_key_set:
-                if required_key in token:
+                if required_key.startswith(token) or token.startswith(required_key):
                     return required_key
 
         # 5. Check tokens in order
@@ -352,16 +383,23 @@ class SchemaGapPlanner:
         return tokens[-1] if tokens else key_lower
 
     def _build_fact_map(
-        self, facts: list[dict[str, Any]]
+        self, facts: list[dict[str, Any]], slug_map: dict[str, str]
     ) -> dict[tuple[str, str], dict[str, Any]]:
         """Build a map of (product_slug, normalized_schema_key) -> fact."""
         fact_map: dict[tuple[str, str], dict[str, Any]] = {}
 
         for fact in facts:
-            product_slug = fact.get("product_slug", "")
-            if not product_slug:
+            raw_slug = fact.get("product_slug", "")
+            if not raw_slug:
                 pid = fact.get("product_id", "")
-                product_slug = pid.lower().replace(" ", "-").replace("_", "-")
+                raw_slug = pid.lower().replace(" ", "-").replace("_", "-")
+
+            # Normalize slug: resolve run-prefixed slug to clean product slug
+            if raw_slug in slug_map:
+                product_slug = slug_map[raw_slug]
+            else:
+                # Fallback: strip run_id prefix if present
+                product_slug = self._strip_run_prefix(raw_slug)
 
             raw_key = fact.get("schema_key", "")
             normalized_key = self._normalize_schema_key(raw_key)
@@ -382,16 +420,21 @@ class SchemaGapPlanner:
         return fact_map
 
     def _build_evidence_map(
-        self, evidence_items: list[dict[str, Any]]
+        self, evidence_items: list[dict[str, Any]], slug_map: dict[str, str]
     ) -> dict[tuple[str, str], list[dict[str, Any]]]:
         """Build a map of (product_slug, normalized_schema_key) -> [evidence]."""
         evidence_map: dict[tuple[str, str], list[dict[str, Any]]] = {}
 
         for ev in evidence_items:
-            product_slug = ev.get("product_slug", "")
-            if not product_slug:
+            raw_slug = ev.get("product_slug", "")
+            if not raw_slug:
                 pid = ev.get("product_id", "")
-                product_slug = pid.lower().replace(" ", "-").replace("_", "-")
+                raw_slug = pid.lower().replace(" ", "-").replace("_", "-")
+
+            if raw_slug in slug_map:
+                product_slug = slug_map[raw_slug]
+            else:
+                product_slug = self._strip_run_prefix(raw_slug)
 
             raw_key = ev.get("schema_key", "")
             normalized_key = self._normalize_schema_key(raw_key)
@@ -708,6 +751,29 @@ class SchemaGapPlanner:
             },
             "missing_schema_keys_by_product": missing_by_product,
         }
+
+    def compute_schema_completion_rate(
+        self,
+        usable_evidence_count: int,
+        product_count: int,
+        baseline_per_product: int = 8,
+    ) -> float:
+        """
+        Compute schema completion rate from usable evidence count.
+        This is the authoritative method used by both detect_schema_gaps (for gap
+        generation) and compute_metrics (for eval_logs persistence).
+
+        Args:
+            usable_evidence_count: Number of evidence items with usable_for_claim = 1
+            product_count: Number of products analyzed
+            baseline_per_product: Expected minimum evidence count per product (default 8)
+
+        Returns:
+            Schema completion rate between 0.0 and 1.0
+        """
+        if product_count <= 0 or usable_evidence_count <= 0:
+            return 0.0
+        return min(1.0, usable_evidence_count / (product_count * baseline_per_product))
 
 
 def detect_schema_gaps(
