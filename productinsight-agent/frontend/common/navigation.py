@@ -13,6 +13,7 @@ NAV_ZH = {
     "Research Plan": "ResearchPlan",
     "Projects": "Projects",
     "Runs": "Runs",
+    "Report": "Report",
     "Project Workspace": "ProjectDetail",
     "Review Center": "HumanReview",
     "Audit / Debug": "TraceAudit",
@@ -26,6 +27,7 @@ NAV_ZH = {
     "Evidence Hub": "EvidenceHub",
     "Knowledge Table": "KnowledgeTable",
     "分析报告": "Report",
+    "Report": "Report",
     "证据池": "Evidence",
     "质检与打回": "Review",
     "合规与隐私": "Compliance",
@@ -41,8 +43,8 @@ NAV_DISPLAY = [
     "Research Plan",
     "Projects",
     "Runs",
+    "Report",
     "Project Workspace",
-    "Review Center",
     "Audit / Debug",
 ]
 
@@ -79,6 +81,18 @@ def render_sidebar():
     )
 
     # Handle navigation change
+    # P0-Fix: Use _nav_lock flag to prevent auto-refresh st.rerun() in
+    # Analysis Flow (Running Center stage) from accidentally triggering the
+    # sidebar radio handler.  When the lock is set, skip this handler and
+    # clear the flag — the rerun that set the lock was intentional.
+    if st.session_state.pop("_nav_lock", False):
+        # Skipping navigation update from a programmatic st.rerun().
+        page = NAV_ZH.get(st.session_state["current_page_zh"], "AnalysisFlow")
+        # Run ID input
+        default_run = _get_default_run_id()
+        run_id = st.session_state.get("selected_run_id") or default_run
+        return page, run_id
+
     if selected_nav != sidebar_selected:
         if selected_nav == "Running Center":
             st.session_state["current_page_zh"] = "Analysis Flow"
