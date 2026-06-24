@@ -67,6 +67,7 @@ import threading
 from typing import Any, Callable
 import time
 import uuid
+from collections import Counter
 from datetime import datetime, timezone
 
 logger = logging.getLogger(__name__)
@@ -84,7 +85,11 @@ NODE_TIMEOUTS: dict[str, int | None] = {
     "build_task_brief": 60,
     "plan_schema": 120,
     "plan_sources": 60,
-    "collect_sources": 900,   # 15 min — URL fetching only (evidence extraction split to own node)
+    "collect_sources": 1800,  # P1-Hotfix: raised from 900 to 1800. The node does discovery (health
+                              # check + API calls ~20-60s) PLUS parallel URL collection (up to 4 batches
+                              # × 225s if sites are slow). Previous 900s was too tight and caused
+                              # the outer thread to be killed mid-run, even when inner collection
+                              # was completing successfully in ~75s. 30min gives enough headroom.
     "evidence_extraction": 600,  # 10 min — parallel CPU text analysis
     "evaluate_evidence": 600,
     "pii_scrub": 60,
@@ -96,7 +101,7 @@ NODE_TIMEOUTS: dict[str, int | None] = {
     "review_claims": 900,
     "reflect_on_review": 600,
     "prepare_human_intervention": 60,
-    "write_report_v2": 1800,  # 30 min — LLM-heavy report generation
+    "write_report_v2": 5400,  # 90 min — LLM-heavy report generation + section revision loops
     "final_review": 600,
     "export_report": 300,
     "compute_metrics": 120,
@@ -152,6 +157,10 @@ MAX_CLAIMS_REWORK_ITERATIONS = 3  # review_claims → execute_rework → analyze
 MAX_CLAIMS_REFLECT_ITERATIONS = 2  # reflect cycles before exiting claims loop → prepare_human_intervention
 MAX_REPORT_REWRITE_ITERATIONS = 3  # final_review → write_report_v2
 MAX_COVERAGE_REWORK_ITERATIONS = 3  # coverage_critic → execute_rework (multi-round search)
+# P1-Redesign (2026-06-18): rework may trigger a real re-collect round, so cap
+# how many times we re-enter collect_sources. Beyond this, we fall back to the
+# evaluate_evidence-only path (original behavior).
+MAX_REWORK_COLLECT_ITERATIONS = 2  # reflect_on_review → execute_rework → collect_sources (true re-fetch)
 
 
 def _summarize_state(state: WorkflowState) -> dict[str, Any]:
@@ -189,6 +198,67 @@ def _summarize_state(state: WorkflowState) -> dict[str, Any]:
         summary["rework_tasks"] = rework_summary.get("total_tasks", 0)
         summary["rework_succeeded"] = rework_summary.get("succeeded", 0)
         summary["rework_failed"] = rework_summary.get("failed", 0)
+
+    # ── Schema key frequency ───────────────────────────────────────────
+    schema_key_counter: Counter[str] = Counter()
+    for ev in state.get("evidence_items", []) or []:
+        sk = ev.get("schema_key", "unknown")
+        schema_key_counter[sk] += 1
+    if schema_key_counter:
+        summary["top_schema_keys"] = [k for k, _ in schema_key_counter.most_common(5)]
+
+    # ── Sample source domains ─────────────────────────────────────────
+    seen_domains: set[str] = set()
+    sample_domains: list[str] = []
+    for src in state.get("sources", []) or []:
+        url = src.get("url") or ""
+        domain = url.split("/")[2] if "//" in url else url
+        if domain and domain not in seen_domains and len(sample_domains) < 3:
+            seen_domains.add(domain)
+            sample_domains.append(domain)
+    if sample_domains:
+        summary["sample_domains"] = sample_domains
+
+    # ── Product names ─────────────────────────────────────────────────
+    # Products live in state["task_brief"]["products"], not state["products"]
+    tb_products = state.get("task_brief", {}).get("products", [])
+    if tb_products:
+        names = [p.get("product_name") if isinstance(p, dict) else (p if isinstance(p, str) else "") for p in tb_products]
+        names = [n for n in names if n]
+        if names:
+            summary["top_products"] = names[:3]
+            summary["product_count"] = len(names)
+
+    # ── Top schema gap dimensions ──────────────────────────────────────
+    gaps = state.get("schema_gaps", [])
+    if gaps:
+        summary["top_gap_dims"] = [
+            (g.get("dimension") or g.get("field") or "unknown") for g in gaps[:5]
+        ]
+
+    # ── Claim draft titles ────────────────────────────────────────────
+    claims = state.get("claim_drafts", [])
+    if claims:
+        titles = [
+            (c.get("title") or c.get("claim_text", "")[:60]) for c in claims
+        ]
+        summary["top_claim_titles"] = [t for t in titles if t][:3]
+
+    # ── Rework reasons ────────────────────────────────────────────────
+    rework_reqs = state.get("rework_requests", [])
+    if rework_reqs:
+        summary["top_rework_reasons"] = [
+            ((r.get("dimension") or r.get("reason", "") or "")[:50]) for r in rework_reqs[:5]
+        ]
+
+    # ── Source type breakdown ─────────────────────────────────────────
+    src_type_counter: Counter[str] = Counter()
+    for src in state.get("sources", []) or []:
+        st = src.get("source_type", "unknown") or "unknown"
+        src_type_counter[st] += 1
+    if src_type_counter:
+        summary["source_types"] = dict(src_type_counter)
+
     return summary
 
 
@@ -387,10 +457,37 @@ def _wrap_node(node_name: str, fn: Callable[[WorkflowState], WorkflowState]) -> 
             else:
                 print(f"[_wrap_node] {node_name}: completed in thread ({elapsed:.1f}s)", flush=True)
         else:
-            # No timeout: run synchronously
-            try:
-                output_state = fn(state)
-            except Exception as raw_exc:
+            # No timeout config for this node OR sequential fallback: run synchronously
+            # Wrap in a thread so we can apply timeout uniformly regardless of path.
+            _sequential_result: dict[str, WorkflowState] = {}
+            _exc_info: list[Any] = []
+
+            def _run_sequential() -> None:
+                try:
+                    _sequential_result["state"] = fn(state)
+                except Exception as raw_exc:
+                    _exc_info.append(raw_exc)
+
+            t = threading.Thread(target=_run_sequential, daemon=True)
+            t.start()
+            timeout_val = NODE_TIMEOUTS.get(node_name) or 300
+            t.join(timeout=timeout_val)
+            if t.is_alive():
+                timed_out = True
+                status = "failed"
+                error_message = f"Node '{node_name}' exceeded timeout of {timeout_val}s"
+                logger.error("Node timeout (sequential): %s", error_message)
+                output_state.setdefault("errors", []).append({
+                    "reason_code": "NODE_TIMEOUT",
+                    "message": error_message,
+                    "node": node_name,
+                    "timeout_secs": timeout_val,
+                })
+                output_state["_failed_node"] = node_name
+                output_state["_failed_node_error"] = error_message
+                output_state["_timed_out"] = True
+            elif _exc_info:
+                raw_exc = _exc_info[0]
                 status = "failed"
                 error_message = str(raw_exc)
                 output_state.setdefault("errors", []).append({
@@ -400,12 +497,83 @@ def _wrap_node(node_name: str, fn: Callable[[WorkflowState], WorkflowState]) -> 
                 })
                 output_state["_failed_node"] = node_name
                 output_state["_failed_node_error"] = error_message
+            elif _sequential_result:
+                output_state = _sequential_result["state"]
+
+        # ── Sequential path: checkpoint recovery for collect_sources timeout ─
+        if timed_out and node_name == "collect_sources":
+            from pathlib import Path
+            import json as _ckpt_json
+            from datetime import datetime, timezone
+            ckpt_path = Path(f"/tmp/collector_ckpt_{run_id}.json")
+            if ckpt_path.exists():
+                try:
+                    ckpt_data = _ckpt_json.loads(ckpt_path.read_text())
+                    ckpt_results = ckpt_data.get("results", [])
+                    now_str = datetime.now(timezone.utc).isoformat()
+                    recovered_sources: list = []
+                    recovered_snapshots: list = []
+                    for res in ckpt_results:
+                        task = res.get("_task", {})
+                        url = task.get("url", "")
+                        product_id = task.get("product_id", "")
+                        source_id = task.get("source_id", "")
+                        snapshot_id = task.get("snapshot_id", "")
+                        error_msg = res.get("error_message")
+                        raw_text = res.get("raw_text", "") or ""
+                        raw_html = res.get("raw_html", "") or ""
+                        title = res.get("title", "") or task.get("product_name", "")
+                        domain = res.get("domain", "")
+                        content_hash = res.get("content_hash", "")
+                        fetched_at = res.get("fetched_at", now_str)
+                        source_type = task.get("source_type", "official_site")
+                        source_record = {
+                            "run_id": run_id, "source_id": source_id, "product_id": product_id,
+                            "url": url, "source_type": source_type,
+                            "fetch_level": task.get("fetch_level", 1),
+                            "fetch_strategy": task.get("fetch_strategy", "requests"),
+                            "collection_method": task.get("collection_method", "seed_url"),
+                            "status": "collected" if not error_msg else "failed",
+                            "char_count": len(raw_text), "content": raw_text,
+                            "raw_html": raw_html, "content_hash": content_hash,
+                            "title": title, "domain": domain,
+                            "error_message": error_msg, "fetched_at": fetched_at,
+                            "created_at": now_str,
+                        }
+                        recovered_sources.append(source_record)
+                        recovered_snapshots.append({
+                            "run_id": run_id, "snapshot_id": snapshot_id,
+                            "source_id": source_id, "product_id": product_id,
+                            "content": raw_text, "char_count": len(raw_text),
+                            "created_at": now_str,
+                        })
+                        try:
+                            from backend.app.storage.repositories import SourceRepository, EvidenceRepository
+                            SourceRepository().add_source(source_record)
+                            EvidenceRepository().add_snapshot(recovered_snapshots[-1])
+                        except Exception as db_exc:
+                            logger.warning("_wrap_node (seq): checkpoint DB write failed: %s", db_exc)
+                    logger.warning(
+                        "_wrap_node (seq): collect_sources TIMEOUT — recovered %d sources and %d snapshots",
+                        len(recovered_sources), len(recovered_snapshots),
+                    )
+                    output_state["sources"] = recovered_sources
+                    output_state["snapshots"] = recovered_snapshots
+                    output_state["raw_documents"] = []
+                    output_state["evidence_items"] = []
+                    output_state["_collect_sources_from_checkpoint"] = True
+                    state["sources"] = recovered_sources
+                    state["snapshots"] = recovered_snapshots
+                    state["raw_documents"] = []
+                    state["evidence_items"] = []
+                    state["_collect_sources_from_checkpoint"] = True
+                    ckpt_path.unlink(missing_ok=True)
+                except Exception as exc:
+                    logger.warning("_wrap_node (seq): checkpoint recovery failed: %s", exc)
 
         # ── Detect human-in-the-loop pause ─────────────────────────
-        should_pause = (
-            node_name == output_state.get("workflow_pause_node")
-            and output_state.get("requires_human_review")
-        )
+        # Pause if ANY node sets workflow_pause_node to signal that it needs human confirmation.
+        should_pause = bool(output_state.get("workflow_pause_node") and output_state.get("requires_human_review"))
         if should_pause:
             status = "paused"
             error_message = output_state.get("workflow_pause_reason") or "Human review required"
@@ -419,6 +587,24 @@ def _wrap_node(node_name: str, fn: Callable[[WorkflowState], WorkflowState]) -> 
         latency_ms = int((time.perf_counter() - start_time) * 1000)
         output_summary = _summarize_state(output_state)
 
+        # ── Backfill enriched fields into input_summary ────────────────
+        # input_summary was captured before fn(state) ran, so it lacks rich fields
+        # that fn populates (e.g. top_products from task_brief enrichment).
+        # Patch input_summary with any enriched fields now present in output_summary.
+        _RICH_FIELDS = (
+            "top_schema_keys", "sample_domains", "source_types",
+            "top_claim_titles", "top_products", "product_count",
+            "schema_gaps", "schema_coverage_rate", "high_priority_schema_gaps",
+            "top_gap_dims", "rework_tasks", "rework_succeeded", "rework_failed",
+            "top_rework_reasons", "evidence_eval_total", "evidence_eval_usable",
+            "evidence_eval_avg_score", "evidence_eval_low_quality",
+        )
+        _enriched_fields = {}
+        for key in _RICH_FIELDS:
+            if key in output_summary and key not in input_summary:
+                input_summary[key] = output_summary[key]
+                _enriched_fields[key] = output_summary[key]
+
         # ── Update DB (with suppressed errors) ──────────────────────
         try:
             from backend.app.storage.repositories import TraceRepository, MessageRepository, WorkflowRepository, RunRepository
@@ -430,6 +616,11 @@ def _wrap_node(node_name: str, fn: Callable[[WorkflowState], WorkflowState]) -> 
                         error_message=error_message,
                         completed_at=output_state.get("workflow_pause_completed_at")
                     )
+                    # Save full workflow state so it can be restored on resume
+                    try:
+                        RunRepository().save_workflow_state(run_id, output_state)
+                    except Exception as exc:
+                        logger.warning("_wrap_node: failed to save workflow_state for pause: %s", exc)
                 else:
                     RunRepository().update_status(run_id, "running", node_name)
             except Exception as exc:
@@ -439,8 +630,10 @@ def _wrap_node(node_name: str, fn: Callable[[WorkflowState], WorkflowState]) -> 
                 if should_pause:
                     WorkflowRepository().pause_node(run_id, node_name, pause_summary, error_message)
                 elif status == "success":
+                    WorkflowRepository().patch_node_input_summary(run_id, node_name, _enriched_fields)
                     WorkflowRepository().complete_node(run_id, node_name, output_summary, latency_ms)
                 else:
+                    WorkflowRepository().patch_node_input_summary(run_id, node_name, _enriched_fields)
                     WorkflowRepository().fail_node(run_id, node_name, error_message or "", output_summary, latency_ms)
             except Exception as exc:
                 logger.warning("_wrap_node: failed to update workflow node %s: %s", node_name, exc)
@@ -648,10 +841,14 @@ def route_after_reflect(state: WorkflowState) -> str:
             )
             return "execute_rework"
 
-    # 正常迭代检查：rework_requests 且未达上限
+    # 正常迭代检查：rework_requests 且未达 claims rework 上限
+    # P1-Redesign (2026-06-18): 当返回 execute_rework 时，实际路由由 graph
+    # 的 run_workflow 决定是 true-recollect (→ collect_sources) 还是 re-score
+    # (→ evaluate_evidence)，取决于 _rework_collect_count 是否达到上限。
     if has_rework and count < MAX_CLAIMS_REWORK_ITERATIONS:
         logger.info(
-            "route_after_reflect: %d rework items, count=%d/%d → execute_rework",
+            "route_after_reflect: %d rework items, count=%d/%d → execute_rework "
+            "(graph will check _rework_collect_count to decide collect_sources vs evaluate_evidence)",
             len(rework_requests), count + 1, MAX_CLAIMS_REWORK_ITERATIONS,
         )
         return "execute_rework"
@@ -782,7 +979,7 @@ def build_graph() -> Any:
         },
     )
 
-    # prepare_human_intervention only fires when review/collection needed
+    # After research is complete, proceed directly to writing the report (outline confirmed implicitly)
     graph.add_edge("prepare_human_intervention", "write_report_v2")
 
     # write_report_v2 → final_review (always, no skipping)
@@ -834,6 +1031,7 @@ def run_workflow(initial_state: WorkflowState) -> WorkflowState:
     initial_state.setdefault("_claims_rework_count", 0)
     initial_state.setdefault("_claims_reflect_count", 0)
     initial_state.setdefault("_report_rewrite_count", 0)
+    initial_state.setdefault("_rework_collect_count", 0)  # P1-Redesign (2026-06-18)
     initial_state.pop("_failed_node", None)
     initial_state.pop("_failed_node_error", None)
 
@@ -877,6 +1075,7 @@ def run_workflow(initial_state: WorkflowState) -> WorkflowState:
     state.setdefault("_claims_rework_count", 0)
     state.setdefault("_claims_reflect_count", 0)
     state.setdefault("_report_rewrite_count", 0)
+    state.setdefault("_rework_collect_count", 0)  # P1-Redesign (2026-06-18)
 
     node_sequence = [
         ("build_task_brief", nodes.build_task_brief),
@@ -941,8 +1140,8 @@ def run_workflow(initial_state: WorkflowState) -> WorkflowState:
                 # CRITICAL: Re-evaluate evidence quality before fetching more sources.
                 # New evidence added by execute_rework needs quality scoring (usable_for_claim)
                 # before analyze_dimensions can generate claims that review_claims can approve.
-                pc = node_index["evaluate_evidence"]
-                state["_claims_rework_count"] = state.get("_claims_rework_count", 0) + 1
+                pc = node_index["execute_rework"]
+                state["_coverage_rework_count"] = state.get("_coverage_rework_count", 0) + 1
                 # P0-Fix: Prevent infinite coverage_rework loops.
                 # execute_rework reads from DB state which is reset each run,
                 # so it always sees empty evidence and loops forever.
@@ -958,7 +1157,13 @@ def run_workflow(initial_state: WorkflowState) -> WorkflowState:
                     )
                     pc = node_index["analyze_dimensions"]
                 continue
-            # sufficient → fall through to analyze_dimensions
+            # P1-Fix: When coverage is sufficient, route_after_coverage_critic
+            # returns "analyze_dimensions". We MUST jump the pc there explicitly;
+            # otherwise pc+=1 falls through to execute_rework (next in
+            # node_sequence) which re-runs without a rework request and
+            # contaminates the workflow trace.
+            pc = node_index["analyze_dimensions"]
+            continue
 
         elif node_name == "review_claims":
             next_node = route_after_review_claims(state)
@@ -970,13 +1175,41 @@ def run_workflow(initial_state: WorkflowState) -> WorkflowState:
         elif node_name == "reflect_on_review":
             next_node = route_after_reflect(state)
             if next_node == "execute_rework":
-                # CRITICAL: Re-evaluate evidence quality before fetching more sources.
-                # Without this, new evidence added by execute_rework has no usable_for_claim
-                # and review_claims will reject all claims with UNUSABLE_EVIDENCE.
-                pc = node_index["evaluate_evidence"]
+                # P1-Redesign (2026-06-18): Real feedback loop. When the claims
+                # reviewer requests rework, prefer a TRUE re-collect round
+                # (jump back to collect_sources) over the legacy LLM-only
+                # re-evaluation path. This actually fetches more evidence
+                # for the missing dimensions instead of merely re-scoring
+                # the existing evidence.
+                rc = state.get("_rework_collect_count", 0)
+                if rc < MAX_REWORK_COLLECT_ITERATIONS:
+                    state["_rework_collect_count"] = rc + 1
+                    logger.info(
+                        "run_workflow (fallback): rework → true re-collect "
+                        "(iteration %d/%d) → collect_sources",
+                        rc + 1, MAX_REWORK_COLLECT_ITERATIONS,
+                    )
+                    # Jump to collect_sources to actually fetch new evidence
+                    # for the dimensions the reviewer flagged.
+                    pc = node_index["collect_sources"]
+                else:
+                    logger.warning(
+                        "run_workflow (fallback): rework re-collect cap reached "
+                        "(%d/%d), falling back to evaluate_evidence re-score",
+                        rc, MAX_REWORK_COLLECT_ITERATIONS,
+                    )
+                    # Legacy path: re-evaluate existing evidence only
+                    pc = node_index["evaluate_evidence"]
                 state["_claims_rework_count"] = state.get("_claims_rework_count", 0) + 1
                 continue
-            # exhausted → fall through to prepare_human_intervention
+            # PASS → write_report_v2 directly (skip the soft prepare_human_intervention node)
+            # exhausted → prepare_human_intervention (then write_report_v2)
+            if next_node == "write_report_v2":
+                logger.info("run_workflow (fallback): reflect_on_review PASS → write_report_v2")
+                pc = node_index["write_report_v2"]
+            else:
+                pc = node_index["prepare_human_intervention"]
+            continue
 
         elif node_name == "prepare_human_intervention":
             # P2 FIX: Check for auto-replay signal
@@ -988,6 +1221,9 @@ def run_workflow(initial_state: WorkflowState) -> WorkflowState:
                     replay_run(state["run_id"])
                 except Exception as exc:
                     logger.warning("Failed to trigger replay: %s", exc)
+            # After prepare_human_intervention, proceed directly to write_report_v2
+            pc = node_index["write_report_v2"]
+            continue
 
         elif node_name == "final_review":
             next_node = route_after_final_review(state)
