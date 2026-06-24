@@ -1,6 +1,10 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { WorkflowData, LiveData } from '../types/workflow';
-import { fetchWorkflowData, fetchLiveData } from '../api/backend';
+import {
+  fetchWorkflowData,
+  fetchExpandedDAG,
+  fetchLiveData,
+} from '../api/backend';
 
 const POLL_INTERVAL_MS = 4000;
 
@@ -12,7 +16,9 @@ export interface WorkflowState {
   lastUpdated: Date | null;
 }
 
-export function useWorkflowData(runId: string) {
+// P1-Redesign (2026-06-18): Accept a mode flag so the hook can swap between
+// the fixed-backbone endpoint and the product-parallel expanded endpoint.
+export function useWorkflowData(runId: string, mode: 'simple' | 'realistic' = 'simple') {
   const [state, setState] = useState<WorkflowState>({
     workflowData: null,
     liveData: null,
@@ -26,9 +32,10 @@ export function useWorkflowData(runId: string) {
   const load = useCallback(async () => {
     if (!runId || stoppedRef.current) return;
     try {
-      // Fetch workflow (required) and live (optional) in parallel
+      // Fetch workflow (required) and live (optional) in parallel.
+      // mode === 'realistic' swaps the workflow endpoint for /dag/expanded.
       const [wd, ld] = await Promise.all([
-        fetchWorkflowData(runId),
+        mode === 'realistic' ? fetchExpandedDAG(runId) : fetchWorkflowData(runId),
         fetchLiveData(runId),
       ]);
       if (stoppedRef.current) return;
@@ -47,7 +54,7 @@ export function useWorkflowData(runId: string) {
         loading: false,
       }));
     }
-  }, [runId]);
+  }, [runId, mode]);
 
   // Initial load + polling
   useEffect(() => {
