@@ -1,9 +1,15 @@
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import { useWorkflowData } from './hooks/useWorkflowData';
+import ReactFlow, { ReactFlowProvider } from 'reactflow';
 import WorkflowGraph from './components/WorkflowGraph';
 import NodeDetails from './components/NodeDetails';
 import { WorkflowNode, CollectionStats } from './types/workflow';
 import { STATUS_COLORS } from './utils/labels';
+
+// P1-Redesign (2026-06-18): DAG view mode toggle.
+// - "simple"      → /api/runs/{runId}/dag       (fixed 16-node backbone)
+// - "realistic"   → /api/runs/{runId}/dag/expanded (per-product parallel workers)
+type DagMode = 'simple' | 'realistic';
 
 function getUrlParam(key: string): string | null {
   const params = new URLSearchParams(window.location.search);
@@ -12,9 +18,21 @@ function getUrlParam(key: string): string | null {
 
 export default function App() {
   const runId = getUrlParam('run_id') ?? '';
-  const { workflowData, liveData, error, loading, lastUpdated } = useWorkflowData(runId);
+  // P1-Redesign: mode is stored in component state and persisted to URL hash
+  // so the demo can deep-link directly to a specific mode.
+  const initialMode: DagMode =
+    getUrlParam('mode') === 'realistic' ? 'realistic' : 'simple';
+  const [mode, setMode] = useState<DagMode>(initialMode);
 
-  const [selectedNode, setSelectedNode] = useState<WorkflowNode | null>(null);
+  const { workflowData, liveData, error, loading, lastUpdated } = useWorkflowData(
+    runId,
+    mode,
+  );
+
+  const [selectedNode, _setSelectedNode] = useState<WorkflowNode | null>(null);
+  const setSelectedNode = useCallback((node: WorkflowNode | null) => {
+    _setSelectedNode(node);
+  }, []);
 
   if (!runId) {
     return (
@@ -82,6 +100,33 @@ export default function App() {
         <div className="flex items-center gap-3">
           <div className="text-sm font-semibold text-slate-200">Workflow DAG</div>
           <div className="text-xs text-slate-500 font-mono">{runId}</div>
+          {/* P1-Redesign: Mode toggle (simple/realistic) */}
+          <div className="flex items-center rounded-md border border-slate-700 overflow-hidden text-xs">
+            <button
+              type="button"
+              onClick={() => setMode('simple')}
+              className="px-2.5 py-1 font-medium transition-colors"
+              style={{
+                backgroundColor: mode === 'simple' ? '#1e3a5f' : 'transparent',
+                color: mode === 'simple' ? '#93c5fd' : '#94a3b8',
+              }}
+              title="Fixed 16-node backbone"
+            >
+              Simple
+            </button>
+            <button
+              type="button"
+              onClick={() => setMode('realistic')}
+              className="px-2.5 py-1 font-medium transition-colors"
+              style={{
+                backgroundColor: mode === 'realistic' ? '#7c2d12' : 'transparent',
+                color: mode === 'realistic' ? '#fdba74' : '#94a3b8',
+              }}
+              title="Per-product parallel expansion with rework counts"
+            >
+              Realistic
+            </button>
+          </div>
         </div>
 
         {/* Status summary pills */}
@@ -194,11 +239,13 @@ export default function App() {
       {/* Main content: graph + details panel */}
       <div className="flex-1 flex overflow-hidden">
         <div className="flex-1 relative">
-          <WorkflowGraph
-            nodes={nodes}
-            edges={edges}
-            onNodeClick={setSelectedNode}
-          />
+          <ReactFlowProvider>
+            <WorkflowGraph
+              nodes={nodes}
+              edges={edges}
+              onNodeClick={setSelectedNode}
+            />
+          </ReactFlowProvider>
         </div>
 
         {selectedNode && (
