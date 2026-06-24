@@ -198,80 +198,87 @@ def _fetch_with_playwright(url: str, timeout: int = 20) -> tuple[str, str, str]:
     """
     Fetch URL using Playwright (headless Chromium) to handle JS-rendered SPA pages.
 
-    Wrapped in ThreadPoolExecutor with HARD_TIMEOUT to prevent indefinite hangs.
-    Playwright is called directly (not as subprocess) since it works fine inside
-    ThreadPoolExecutor in the default Python environment.
+    P2-FIX (2026-06-20): Subprocess-based isolation.
 
-    Returns (raw_text, title, error_message).
+    Previous implementation ran Playwright inside a ThreadPoolExecutor worker. When
+    Playwright's browser.close() hung on a misbehaving site (e.g. coda.io), the
+    worker thread could not be terminated by future.cancel(). The orphan Node.js
+    driver and Chromium subprocess survived, eventually pinning the entire
+    uvicorn worker (19 threads blocked on the collect_sources wait() loop) for
+    30+ minutes.
+
+    New approach: launch the Playwright work in a fresh Python subprocess running
+    playwright_runner.py. On hard timeout we kill the entire process group (Popen
+    start_new_session=True + os.killpg(SIGKILL)), which takes down the Node.js
+    driver and Chromium children. The subprocess always exits within
+    HARD_TIMEOUT seconds, so this function never hangs.
     """
-    HARD_TIMEOUT = 15  # Playwright subprocess-level timeout
+    import json as _json
+    import os
+    import subprocess
+    import sys
+    from pathlib import Path
 
-    from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
+    HARD_TIMEOUT = max(timeout + 2, 8)  # grace period beyond page goto timeout
 
-    def _run():
-        try:
-            from playwright.sync_api import sync_playwright
-        except ImportError:
-            return "", "", "Playwright not installed"
+    runner_path = Path(__file__).parent / "playwright_runner.py"
+    if not runner_path.exists():
+        return "", "", f"Playwright runner missing: {runner_path}"
 
-        browser = None
-        try:
-            with sync_playwright() as p:
-                browser = p.chromium.launch(headless=True)
-                ctx = browser.new_context(
-                    viewport={"width": 1280, "height": 720},
-                    user_agent=USER_AGENT,
-                    extra_http_headers={
-                        "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
-                    },
-                )
-                page = ctx.new_page()
-
-                # Use 'load' event — fires when HTML is parsed.
-                # 'networkidle' never resolves on pages with persistent connections.
-                try:
-                    page.goto(url, wait_until="load", timeout=timeout * 1000)
-                except Exception:
-                    try:
-                        page.goto(url, wait_until="domcontentloaded", timeout=timeout * 1000)
-                    except Exception:
-                        pass
-
-                page.wait_for_timeout(3000)
-
-                title = page.title() or ""
-
-                # Get text from body
-                try:
-                    body_text = page.locator("body").inner_text(timeout=3000)
-                    if len(body_text.strip()) < 200:
-                        page.wait_for_timeout(3000)
-                        body_text = page.locator("body").inner_text(timeout=3000)
-                except Exception:
-                    body_text = ""
-
-                return _clean_text(body_text), title, ""
-
-        except Exception as exc:
-            return "", "", f"Playwright error: {exc}"
-        finally:
-            if browser is not None:
-                try:
-                    browser.close(timeout=3000)
-                except Exception:
-                    try:
-                        browser.kill()
-                    except Exception:
-                        pass
-
+    proc = None
     try:
-        with ThreadPoolExecutor(max_workers=1) as ex:
-            future = ex.submit(_run)
-            return future.result(timeout=HARD_TIMEOUT)
-    except FuturesTimeoutError:
-        return "", "", f"Playwright exceeded hard timeout of {HARD_TIMEOUT}s"
+        proc = subprocess.Popen(
+            [sys.executable, str(runner_path), url, str(timeout)],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            start_new_session=True,  # new process group so we can killpg the tree
+        )
+        try:
+            stdout, _stderr = proc.communicate(timeout=HARD_TIMEOUT)
+        except subprocess.TimeoutExpired:
+            try:
+                os.killpg(proc.pid, 9)  # SIGKILL the entire group (driver + chromium)
+            except (ProcessLookupError, PermissionError):
+                try:
+                    proc.kill()
+                except Exception:
+                    pass
+            try:
+                proc.wait(timeout=2)
+            except Exception:
+                pass
+            return "", "", f"Playwright exceeded hard timeout of {HARD_TIMEOUT}s"
+
+        if proc.returncode != 0:
+            return "", "", f"Playwright runner exited with code {proc.returncode}"
+
+        try:
+            payload = _json.loads(stdout.decode("utf-8", errors="replace") or "{}")
+        except Exception as exc:
+            return "", "", f"Playwright runner JSON parse error: {exc}"
+
+        if not payload.get("ok"):
+            return "", "", payload.get("error") or "Playwright returned ok=false"
+
+        text = payload.get("text", "") or ""
+        title = payload.get("title", "") or ""
+        if len(text.strip()) < 50:
+            return text, title, "Playwright returned <50 chars (likely blocked)"
+        return _clean_text(text), title, ""
+
+    except FileNotFoundError as exc:
+        return "", "", f"Playwright runner not found: {exc}"
     except Exception as exc:
-        return "", "", f"Playwright thread error: {exc}"
+        return "", "", f"Playwright subprocess error: {exc}"
+    finally:
+        if proc is not None and proc.poll() is None:
+            try:
+                os.killpg(proc.pid, 9)
+            except Exception:
+                try:
+                    proc.kill()
+                except Exception:
+                    pass
 
 
 def fetch_url_with_fallback(
@@ -366,7 +373,18 @@ def fetch_url_with_fallback(
 
             search_query = " ".join(query_parts) if query_parts else url
 
-            search_results = search_provider.search(search_query, top_k=3)
+            from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
+            SEARCH_TIMEOUT = 20  # seconds — Doubao API typically responds in 5-15s
+            try:
+                with ThreadPoolExecutor(max_workers=1) as _sp_ex:
+                    _sp_future = _sp_ex.submit(search_provider.search, search_query, 3)
+                    search_results = _sp_future.result(timeout=SEARCH_TIMEOUT)
+            except FuturesTimeoutError:
+                logger.warning("fetch_url_with_fallback L3 search timed out (%ds) for %s", SEARCH_TIMEOUT, url)
+                search_results = []
+            except Exception as _sp_exc:
+                logger.warning("fetch_url_with_fallback L3 search failed for %s: %s", url, _sp_exc)
+                search_results = []
             if search_results:
                 best = search_results[0]
                 raw_text = f"[Source: {best.title}]\n{best.snippet}"
