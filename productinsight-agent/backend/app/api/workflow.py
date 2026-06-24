@@ -94,6 +94,31 @@ def get_workflow(run_id: str) -> dict[str, Any]:
     except Exception:
         edges = []
 
+    # Fallback: if nodes exist but edges are missing, derive edges from
+    # backbone node sequence (prevents ReactFlow from crashing on old runs).
+    if nodes and not edges:
+        import uuid
+        backbone = [
+            "build_task_brief", "plan_schema", "plan_sources", "collect_sources",
+            "evaluate_evidence", "pii_scrub", "extract_facts", "detect_schema_gaps",
+            "analyze_dimensions", "review_claims", "execute_rework",
+            "prepare_human_intervention", "write_report_v2", "write_report",
+            "final_review", "export_report", "compute_metrics",
+        ]
+        existing_names = {n.get("node_name") for n in nodes}
+        for i in range(len(backbone) - 1):
+            a, b = backbone[i], backbone[i + 1]
+            if a in existing_names and b in existing_names:
+                edges.append({
+                    "edge_id": f"edge_{uuid.uuid4().hex[:8]}_fallback",
+                    "run_id": run_id,
+                    "from_node": a,
+                    "to_node": b,
+                    "edge_type": "sequence",
+                    "condition_json": None,
+                    "created_at": None,
+                })
+
     # Compute summary from nodes
     total = len(nodes)
     completed = sum(1 for n in nodes if n.get("status") == "completed")
@@ -129,6 +154,138 @@ def get_workflow(run_id: str) -> dict[str, Any]:
     }
 
 
+def _enrich_summaries_from_db(
+    run_id: str,
+    nodes: list[dict[str, Any]],
+) -> None:
+    """Patch node summaries with computed rich fields from DB tables.
+
+    Called for every DAG response so old runs (whose output_summary_json was
+    written before top_schema_keys / sample_domains / top_products existed)
+    still display meaningful content in the SummaryCard.
+    """
+    try:
+        from collections import Counter
+        from backend.app.storage.repositories import (
+            EvidenceRepository, SourceRepository, ClaimRepository,
+        )
+        ev_repo = EvidenceRepository()
+        src_repo = SourceRepository()
+        cl_repo = ClaimRepository()
+
+        all_evidence = ev_repo.list_evidence(run_id)
+        all_sources = src_repo.list_sources(run_id)
+        all_claims = cl_repo.list_claims(run_id)
+
+        logger.info(
+            "_enrich_summaries_from_db: run_id=%s evidence=%d sources=%d claims=%d",
+            run_id, len(all_evidence), len(all_sources), len(all_claims),
+        )
+
+        # Schema key frequency
+        sk_counter: Counter[str] = Counter()
+        for ev in all_evidence:
+            sk = ev.get("schema_key", "unknown") or "unknown"
+            sk_counter[sk] += 1
+        top_schema_keys = [k for k, _ in sk_counter.most_common(5)] if sk_counter else []
+
+        # Sample domains (deduplicated, first 3)
+        seen: set[str] = set()
+        sample_domains: list[str] = []
+        for s in all_sources:
+            url = s.get("url") or ""
+            domain = url.split("/")[2] if "//" in url else url
+            if domain and domain not in seen and len(sample_domains) < 3:
+                seen.add(domain)
+                sample_domains.append(domain)
+
+        # Source type breakdown
+        st_counter: Counter[str] = Counter()
+        for s in all_sources:
+            st = s.get("source_type") or s.get("src_source_type") or "unknown"
+            st_counter[st] += 1
+        source_types = dict(st_counter) if st_counter else None
+
+        # Claim titles (draft + signed)
+        claim_titles: list[str] = []
+        for c in all_claims:
+            title = c.get("title") or c.get("claim_text", "")[:60]
+            if title:
+                claim_titles.append(title)
+        top_claim_titles = claim_titles[:3]
+
+        # Product names (from evidence product_slug, best effort)
+        seen_products: set[str] = set()
+        top_products: list[str] = []
+        for ev in all_evidence:
+            ps = ev.get("product_slug", "")
+            if ps and ps not in seen_products and len(top_products) < 3:
+                seen_products.add(ps)
+                top_products.append(ps)
+
+        # Patch each node's output_summary with these fields
+        for node in nodes:
+            os = node.get("output_summary") or {}
+            if not isinstance(os, dict):
+                os = {}
+            os = dict(os)  # shallow copy so we don't mutate DB JSON
+
+            if not os.get("top_schema_keys") and top_schema_keys:
+                os["top_schema_keys"] = top_schema_keys
+            if not os.get("sample_domains") and sample_domains:
+                os["sample_domains"] = sample_domains
+            if not os.get("source_types") and source_types:
+                os["source_types"] = source_types
+            if not os.get("top_claim_titles") and top_claim_titles:
+                os["top_claim_titles"] = top_claim_titles
+            if not os.get("top_products") and top_products:
+                os["top_products"] = top_products
+
+            # P0 Fix: inject count fields that SummaryCard components depend on.
+            # Without these the detail sidebar stays empty for most node types.
+            node_name = node.get("node_name", "")
+            if node_name in ("collect_sources", "evaluate_evidence"):
+                if os.get("evidence_items") is None:
+                    os["evidence_items"] = len(all_evidence)
+                if os.get("sources") is None:
+                    failed_srcs = sum(1 for s in all_sources if s.get("status") == "failed")
+                    os["sources"] = len(all_sources)
+                    os["errors"] = failed_srcs
+            elif node_name == "extract_facts":
+                if os.get("evidence_items") is None:
+                    os["evidence_items"] = len(all_evidence)
+                if os.get("facts") is None:
+                    # Facts are embedded in evidence content_extracted JSON; count non-empty strings
+                    fact_count = 0
+                    for ev in all_evidence:
+                        content = ev.get("content_extracted") or ev.get("content", "") or ""
+                        if len(content) > 100:  # has meaningful content
+                            fact_count += 1
+                    os["facts"] = fact_count
+            elif node_name in ("review_claims", "write_report_v2"):
+                if os.get("signed_claims") is None:
+                    signed = [c for c in all_claims if c.get("review_status") == "signed"]
+                    os["signed_claims"] = len(signed)
+                if os.get("claim_drafts") is None:
+                    drafts = [c for c in all_claims if c.get("review_status") in ("draft", "pending")]
+                    os["claim_drafts"] = len(drafts)
+                if os.get("rework_requests") is None:
+                    from backend.app.storage.repositories import ReviewRepository
+                    try:
+                        rework = ReviewRepository().list_rework_requests(run_id)
+                        os["rework_requests"] = len(rework) if rework else 0
+                    except Exception:
+                        os["rework_requests"] = 0
+
+            node["output_summary"] = os
+    except Exception as exc:
+        import sys, traceback
+        logger.error(
+            "_enrich_summaries_from_db failed: run_id=%s error=%s\n%s",
+            run_id, exc, traceback.format_exc(),
+        )
+
+
 @router.get("/runs/{run_id}/dag")
 def get_dag_data(run_id: str) -> dict[str, Any]:
     """Return DAG graph data (nodes + edges) for the ReactFlow frontend component.
@@ -147,6 +304,31 @@ def get_dag_data(run_id: str) -> dict[str, Any]:
         edges = repo.list_workflow_edges(run_id)
     except Exception:
         edges = []
+
+    # Fallback: if nodes exist but edges are missing, derive edges from
+    # backbone node sequence (prevents ReactFlow from crashing on old runs).
+    if nodes and not edges:
+        import uuid
+        backbone = [
+            "build_task_brief", "plan_schema", "plan_sources", "collect_sources",
+            "evaluate_evidence", "pii_scrub", "extract_facts", "detect_schema_gaps",
+            "analyze_dimensions", "review_claims", "execute_rework",
+            "prepare_human_intervention", "write_report_v2", "write_report",
+            "final_review", "export_report", "compute_metrics",
+        ]
+        existing_names = {n.get("node_name") for n in nodes}
+        for i in range(len(backbone) - 1):
+            a, b = backbone[i], backbone[i + 1]
+            if a in existing_names and b in existing_names:
+                edges.append({
+                    "edge_id": f"edge_{uuid.uuid4().hex[:8]}_fallback",
+                    "run_id": run_id,
+                    "from_node": a,
+                    "to_node": b,
+                    "edge_type": "sequence",
+                    "condition_json": None,
+                    "created_at": None,
+                })
 
     # Enrich collect_sources node with collection_stats and sources
     try:
@@ -191,10 +373,232 @@ def get_dag_data(run_id: str) -> dict[str, Any]:
     except Exception:
         pass  # Enrichment is best-effort
 
+    # Patch old runs whose output_summary lacks the new rich fields
+    _enrich_summaries_from_db(run_id, nodes)
+
     return {
         "run_id": run_id,
         "nodes": nodes,
         "edges": edges,
+    }
+
+
+@router.get("/runs/{run_id}/dag/expanded")
+def get_dag_expanded(run_id: str) -> dict[str, Any]:
+    """Return a product-parallel expanded DAG with rework iteration counts.
+
+    P1-Redesign (2026-06-18): The "realistic" DAG view. Unlike /dag which
+    returns a fixed 16-node backbone, this endpoint expands collect_sources
+    and evaluate_evidence into N parallel workers (one per product), and
+    annotates rework edges with the actual trigger count pulled from the
+    metrics block.
+
+    Layout convention:
+      - Backbone nodes keep their original positions.
+      - Parallel workers (collect_{slug}, evaluate_evidence_{slug}) are placed
+        BELOW the backbone in their own row, evenly distributed horizontally
+        by product index.
+      - Rework edges carry `rework_count` and are highlighted in purple.
+
+    The frontend renders this with a "Realistic" mode toggle that swaps
+    /dag → /dag/expanded and lets the user compare the static backbone
+    view to the actual per-product execution fan-out.
+    """
+    base = get_dag_data(run_id)
+    base_nodes = base.get("nodes", []) or []
+    base_edges = base.get("edges", []) or []
+
+    # ── 1. Load products from runs.task_brief ───────────────────
+    # Note: RunRepository.get_run() already parses task_brief_json into a
+    # dict under the "task_brief" key, so we read it directly. (Avoid the
+    # legacy "task_brief_json" key — it's been popped by the repository.)
+    products: list[dict[str, Any]] = []
+    try:
+        from backend.app.storage.repositories import RunRepository
+        run_row = RunRepository().get_run(run_id) or {}
+        task_brief = run_row.get("task_brief") or {}
+        if isinstance(task_brief, str):
+            # Fallback for any caller that still passes a raw string
+            import json as _json
+            try:
+                task_brief = _json.loads(task_brief)
+            except Exception:
+                task_brief = {}
+        products = task_brief.get("products", []) or []
+    except Exception:
+        products = []
+
+    # Cap at MAX_PARALLEL_DISPLAY to avoid React Flow overload
+    MAX_PARALLEL_DISPLAY = 10
+    display_products = products[:MAX_PARALLEL_DISPLAY]
+    overflow = len(products) - len(display_products)
+
+    # ── 2. Read rework iteration counts from metrics ──────────────
+    rework_collect_count = 0
+    rework_evidence_counts: dict[int, int] = {}
+    rework_facts_counts: dict[int, int] = {}
+    try:
+        from backend.app.storage.repositories import EvalRepository
+        eval_log = EvalRepository().get_latest_eval(run_id) or {}
+        metrics_block = eval_log.get("metrics", {}) or {}
+        rework_collect_count = int(metrics_block.get("rework_collect_triggered_count", 0) or 0)
+        rework_evidence_counts = {
+            int(k): int(v)
+            for k, v in (metrics_block.get("evidence_by_rework_iteration", {}) or {}).items()
+        }
+        rework_facts_counts = {
+            int(k): int(v)
+            for k, v in (metrics_block.get("facts_by_rework_iteration", {}) or {}).items()
+        }
+    except Exception:
+        pass
+
+    # ── 3. Build parallel worker nodes ────────────────────────────
+    # Map product_name → safe slug used as node suffix.
+    def _slug(name: str) -> str:
+        return "".join(
+            c if c.isalnum() else "_"
+            for c in (name or "p").lower()
+        ).strip("_")[:24] or "p"
+
+    expanded_nodes: list[dict[str, Any]] = []
+    # Anchor: a virtual "collect_sources_parallel" group node that points to
+    # N child workers via virtual edges. (React Flow supports group nodes.)
+    expanded_nodes.append({
+        "node_id": f"{run_id}_collect_parallel",
+        "run_id": run_id,
+        "node_name": "collect_parallel",
+        "node_type": "parallel_group",
+        "status": "completed",
+        "latency_ms": 0,
+        "label": f"collect × {len(products)} products",
+        "child_count": len(display_products),
+        "overflow_count": overflow,
+    })
+    for idx, p in enumerate(display_products):
+        slug = _slug(p.get("name") or p.get("product_name") or f"p{idx}")
+        pid = p.get("product_id") or p.get("name") or f"product_{idx}"
+        expanded_nodes.append({
+            "node_id": f"{run_id}_collect_{slug}",
+            "run_id": run_id,
+            "node_name": f"collect_{slug}",
+            "node_type": "parallel_worker",
+            "status": "completed",
+            "latency_ms": 0,
+            "label": p.get("name") or p.get("product_name") or pid,
+            "product_id": pid,
+            "product_index": idx,
+            "parallel_group": "collect_parallel",
+        })
+        expanded_nodes.append({
+            "node_id": f"{run_id}_evaluate_{slug}",
+            "run_id": run_id,
+            "node_name": f"evaluate_{slug}",
+            "node_type": "parallel_worker",
+            "status": "completed",
+            "latency_ms": 0,
+            "label": p.get("name") or p.get("product_name") or pid,
+            "product_id": pid,
+            "product_index": idx,
+            "parallel_group": "evaluate_parallel",
+        })
+    expanded_nodes.append({
+        "node_id": f"{run_id}_evaluate_parallel",
+        "run_id": run_id,
+        "node_name": "evaluate_parallel",
+        "node_type": "parallel_group",
+        "status": "completed",
+        "latency_ms": 0,
+        "label": f"evaluate × {len(products)} products",
+        "child_count": len(display_products),
+        "overflow_count": overflow,
+    })
+
+    # ── 4. Replace backbone collect_sources/evaluate_evidence with virtual refs ──
+    # Keep backbone nodes but mark them as "expanded" so the frontend knows
+    # not to render them as parallel workers.
+    backbone = list(base_nodes)
+    for n in backbone:
+        if n.get("node_name") in ("collect_sources", "evaluate_evidence"):
+            n["expanded"] = True
+            n["parallel_count"] = len(display_products)
+
+    # ── 5. Build expanded edges ────────────────────────────────────
+    # Sequence backbone → collect_parallel → N collect_{slug} → evaluate_parallel → N evaluate_{slug} → analyze_dimensions
+    expanded_edges: list[dict[str, Any]] = []
+    # plan_sources → collect_parallel (fan-in from backbone)
+    expanded_edges.append({
+        "edge_id": f"{run_id}_plan_sources__collect_parallel",
+        "run_id": run_id,
+        "from_node": "plan_sources",
+        "to_node": "collect_parallel",
+        "edge_type": "sequence",
+    })
+    for idx in range(len(display_products)):
+        expanded_edges.append({
+            "edge_id": f"{run_id}_collect_parallel__collect_{idx}",
+            "run_id": run_id,
+            "from_node": "collect_parallel",
+            "to_node": f"collect_{_slug(display_products[idx].get('name') or display_products[idx].get('product_name') or f'p{idx}')}",
+            "edge_type": "parallel_fan_out",
+        })
+        expanded_edges.append({
+            "edge_id": f"{run_id}_collect_{idx}__evaluate_parallel",
+            "run_id": run_id,
+            "from_node": f"collect_{_slug(display_products[idx].get('name') or display_products[idx].get('product_name') or f'p{idx}')}",
+            "to_node": "evaluate_parallel",
+            "edge_type": "parallel_fan_in",
+        })
+        expanded_edges.append({
+            "edge_id": f"{run_id}_evaluate_parallel__evaluate_{idx}",
+            "run_id": run_id,
+            "from_node": "evaluate_parallel",
+            "to_node": f"evaluate_{_slug(display_products[idx].get('name') or display_products[idx].get('product_name') or f'p{idx}')}",
+            "edge_type": "parallel_fan_out",
+        })
+        expanded_edges.append({
+            "edge_id": f"{run_id}_evaluate_{idx}__analyze_dimensions",
+            "run_id": run_id,
+            "from_node": f"evaluate_{_slug(display_products[idx].get('name') or display_products[idx].get('product_name') or f'p{idx}')}",
+            "to_node": "analyze_dimensions",
+            "edge_type": "parallel_fan_in",
+        })
+
+    # ── 6. Annotate rework edges with iteration counts ────────────
+    # Backbone edges that carry rework semantics get rework_count set.
+    rework_edge_map = {
+        "coverage_critic__execute_rework": "coverage_critic__execute_rework",
+        "execute_rework__coverage_critic": "coverage_critic__execute_rework",
+        "reflect_on_review__execute_rework": "claims_rework",
+        "execute_rework__evaluate_evidence": "claims_rework",
+        "execute_rework__collect_sources": "claims_rework_collect",
+        "final_review__write_report_v2": "report_rewrite",
+        "write_report_v2__final_review": "report_rewrite",
+    }
+    for e in base_edges:
+        key = f"{e.get('from_node')}__{e.get('to_node')}"
+        if key in rework_edge_map:
+            # Default to 0 if we don't have a measurement
+            e["rework_count"] = (
+                rework_collect_count
+                if rework_edge_map[key] == "claims_rework_collect"
+                else 0
+            )
+            e["rework_kind"] = rework_edge_map[key]
+
+    return {
+        "run_id": run_id,
+        "nodes": expanded_nodes,
+        "backbone_nodes": backbone,
+        "edges": expanded_edges,
+        "base_edges": base_edges,
+        "mode": "realistic",
+        "product_count": len(products),
+        "display_product_count": len(display_products),
+        "overflow_product_count": overflow,
+        "rework_collect_count": rework_collect_count,
+        "evidence_by_rework_iteration": rework_evidence_counts,
+        "facts_by_rework_iteration": rework_facts_counts,
     }
 
 
@@ -1042,13 +1446,35 @@ def execute_rework(rework_id: str, request: ExecuteReworkRequest) -> dict[str, A
         # If product not found in task_brief, create a placeholder
         if not found:
             product_slug = product_id.lower().replace(" ", "-").replace("_", "-")
-            target_products_list.append({
+            schema_type = task_brief.get("schema_type", "ai_agent_platform")
+            # P2 Fix: Generate discovery queries for the new product so collect_sources can run
+            new_product_entry = {
                 "product_id": product_id,
                 "product_slug": product_slug,
                 "product_name": product_name,
                 "official_website": all_seed_urls[0] if all_seed_urls else "",
                 "seed_urls": all_seed_urls,
-            })
+            }
+            try:
+                from backend.app.orchestrator.nodes import _generate_multi_dimension_queries
+                discovery_queries = _generate_multi_dimension_queries(
+                    products=[new_product_entry],
+                    schema_type=schema_type,
+                )
+                if discovery_queries:
+                    task_brief = dict(task_brief)
+                    # Initialize discovery_queries if not present
+                    existing_queries = task_brief.get("source_plan", {}).get("discovery_queries", [])
+                    task_brief.setdefault("source_plan", {})["discovery_queries"] = (
+                        existing_queries + discovery_queries
+                    )
+                    logger.info(
+                        "execute_rework: generated %d discovery queries for new product %s",
+                        len(discovery_queries), product_id,
+                    )
+            except Exception as qe:
+                logger.warning("execute_rework: failed to generate discovery queries for %s: %s", product_id, qe)
+            target_products_list.append(new_product_entry)
             logger.info("execute_rework: created placeholder product %s with seed_urls", product_id)
 
         # Update task_brief with scoped products
@@ -1232,3 +1658,134 @@ def execute_rework(rework_id: str, request: ExecuteReworkRequest) -> dict[str, A
             detail=f"Rework execution failed: {exc}",
         )
 
+
+# ── P2 Fix: Hot-replan endpoint ──────────────────────────────────────────────
+
+class AddProductsRequest(BaseModel):
+    """Request to add new products to an existing run's research plan."""
+    products: list[dict[str, Any]] = Field(
+        description="List of products to add. Each must have at least 'product_name'. "
+                    "Optional: 'seed_urls', 'official_website'.",
+        min_length=1,
+    )
+
+
+class AddProductsResponse(BaseModel):
+    """Response after adding products to a run."""
+    added_count: int
+    added_products: list[dict[str, Any]]
+    discovery_queries_generated: int
+    message: str
+
+
+@router.post("/runs/{run_id}/products", response_model=AddProductsResponse)
+def add_products_to_run(run_id: str, request: AddProductsRequest) -> AddProductsResponse:
+    """
+    Add new products to an existing run's task_brief and generate discovery queries
+    for source collection.
+
+    This enables hot-replan: users can add competitors via the frontend after a run
+    has started, without needing to restart the entire workflow from scratch.
+
+    Flow:
+    1. Load the existing run and task_brief from DB
+    2. Normalize each incoming product entry
+    3. Check for duplicates (by product_name or product_slug)
+    4. Generate discovery queries for new products
+    5. Merge into task_brief.products and task_brief.source_plan.discovery_queries
+    6. Persist updated task_brief to the runs table
+    7. Return summary for the frontend to trigger a targeted collection pass
+    """
+    from backend.app.storage.repositories import RunRepository
+    import json as _json
+
+    run_repo = RunRepository()
+    run = run_repo.get_run(run_id)
+    if not run:
+        raise HTTPException(status_code=404, detail=f"Run not found: {run_id}")
+
+    # Parse task_brief
+    raw_tb = run.get("task_brief_json") or {}
+    task_brief = _json.loads(raw_tb) if isinstance(raw_tb, str) else (raw_tb or {})
+
+    existing_products: list[dict] = task_brief.get("products", [])
+    existing_names = {p.get("product_name", "").lower() for p in existing_products}
+    existing_slugs = {p.get("product_slug", "").lower() for p in existing_products}
+
+    # Deduplicate and normalize incoming products
+    added: list[dict[str, Any]] = []
+    for raw_p in request.products:
+        name = (raw_p.get("product_name") or raw_p.get("name") or "").strip()
+        if not name:
+            continue
+        slug = raw_p.get("product_slug") or name.lower().replace(" ", "-").replace("_", "-")
+        # Skip if product already exists in this run
+        if name.lower() in existing_names or slug.lower() in existing_slugs:
+            logger.info("add_products_to_run: skipping duplicate product '%s' in run %s", name, run_id)
+            continue
+
+        seed_urls = raw_p.get("seed_urls", [])
+        if isinstance(seed_urls, str):
+            seed_urls = [seed_urls]
+        seed_urls = [u.strip() for u in seed_urls if u.strip()]
+
+        new_product = {
+            "product_id": f"{run_id}_{slug}",  # temporary ID until collected
+            "product_slug": slug,
+            "product_name": name,
+            "official_website": raw_p.get("official_website") or (seed_urls[0] if seed_urls else ""),
+            "seed_urls": seed_urls,
+        }
+        added.append(new_product)
+        existing_products.append(new_product)
+        existing_names.add(name.lower())
+        existing_slugs.add(slug.lower())
+
+    if not added:
+        return AddProductsResponse(
+            added_count=0,
+            added_products=[],
+            discovery_queries_generated=0,
+            message="No new products to add (all provided products already exist in this run).",
+        )
+
+    # Generate discovery queries for the new products
+    schema_type = task_brief.get("schema_type", "ai_agent_platform")
+    discovery_queries: list[dict] = []
+    try:
+        from backend.app.orchestrator.nodes import _generate_multi_dimension_queries
+        discovery_queries = _generate_multi_dimension_queries(
+            products=added,
+            schema_type=schema_type,
+        )
+    except Exception as e:
+        logger.warning("add_products_to_run: failed to generate discovery queries: %s", e)
+
+    # Merge into source_plan
+    task_brief = dict(task_brief)
+    task_brief["products"] = existing_products
+    source_plan: dict = dict(task_brief.get("source_plan") or {})
+    existing_queries: list = source_plan.get("discovery_queries") or []
+    source_plan["discovery_queries"] = existing_queries + discovery_queries
+    source_plan["source_readiness"] = "ready_with_discovery"
+    task_brief["source_plan"] = source_plan
+
+    # Persist updated task_brief back to DB
+    run_repo.update_run(run_id, task_brief_json=_json.dumps(task_brief))
+
+    logger.info(
+        "add_products_to_run: run_id=%s added %d products, generated %d discovery queries",
+        run_id, len(added), len(discovery_queries),
+    )
+
+    return AddProductsResponse(
+        added_count=len(added),
+        added_products=added,
+        discovery_queries_generated=len(discovery_queries),
+        message=(
+            f"Added {len(added)} product(s). "
+            f"Generated {len(discovery_queries)} discovery query/queries. "
+            "Call POST /api/rework-tasks to create collection tasks, "
+            "then POST /api/rework-tasks/{{id}}/execute to collect evidence."
+        ),
+    )
