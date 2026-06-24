@@ -177,6 +177,29 @@ NOISE_BLACKLIST = [
     # P0-Rebuild: Navigation-only content
     "request rate limit",
     "model providers",
+    # P1 (2026-06-22): Ad/branding noise from third-party pages
+    "try langsmith",
+    # P1 (2026-06-22): Product branding/intro nav fragments from homepage or docs hero
+    "the name dify comes from",
+    "do it for you",
+    "dive into",
+    "dive into dify",
+    "dive into your",
+    # P1 (2026-06-22): Pagination and feedback widgets
+    "was this page helpful",
+    "helpful?",
+    # P1 (2026-06-22): LangChain/LangGraph ecosystem ads on docs pages
+    "langsmith",
+    "get a demo",
+    "balance agent control with agency",
+    "langgraph",
+    # P1 (2026-06-22): Self-referential nav noise in docs
+    "app toolkit",
+    "api extension",
+    "version control",
+    "annotation system",
+    "integrate in apps",
+    "test retrieval",
 ]
 
 
@@ -203,6 +226,8 @@ def is_noise_evidence(snippet: str) -> bool:
         "sign in", "log in", "register", "create account",
         "copyright", "all rights reserved",
         "home", "menu", "navigation", "cookie",
+        # P1 (2026-06-22): CTA and branding nav prefixes
+        "dive into", "try", "get started with", "learn more about",
     ]
     for prefix in nav_prefixes:
         if check_text.startswith(prefix):
