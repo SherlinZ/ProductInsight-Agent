@@ -61,8 +61,9 @@ class FactRepository:
                     fact_id, run_id, product_id, product_slug, schema_key, raw_schema_key,
                     value_json, value_type, unit, confidence,
                     evidence_ids_json, extraction_result_id,
-                    review_status, created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    review_status, created_at, updated_at,
+                    rework_iteration
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     fact["fact_id"], run_id, resolved_pid, product_slug,
@@ -71,6 +72,8 @@ class FactRepository:
                     fact.get("confidence", 0.5), evidence_ids_json,
                     fact.get("extraction_result_id", ""), fact.get("review_status", "pending"),
                     fact["created_at"], fact.get("updated_at", fact["created_at"]),
+                    # P1-Redesign (2026-06-18): rework attribution
+                    int(fact.get("rework_iteration", 0) or 0),
                 ),
             )
 
