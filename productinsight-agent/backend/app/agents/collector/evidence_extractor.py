@@ -531,13 +531,13 @@ NAVIGATION_NOISE = {
     "subscribe", "previous page", "next page", "read more", "learn more",
     "start shipping", "shipping powerful", "core dify", "dify building",
     "build powerful", "chat with", "ask anything", "explore",
-    # Chinese nav terms (Coze/FastGPT/Dify sidebar/menu)
+    # Chinese nav terms
     "扣子", "创建", "主页", "项目开发", "资源库", "任务中心",
     "效果评测", "空间配置", "模板商店", "插件商店", "作品社区",
     "api管理", "文档中心", "目录", "取消固定", "大纲",
     "快速上手", "快速开始", "入门", "使用指南",
     "产品介绍", "核心特性", "功能介绍", "跳转到主要内容",
-    # P0-Rebuild: Dify docs specific nav items
+    # Dify docs specific nav items
     "request rate limit", "workspace", "overview", "model providers",
     "plugins", "tools", "manage apps", "manage members",
     "personal settings", "billing", "api extension",
@@ -547,13 +547,20 @@ NAVIGATION_NOISE = {
     "app toolkit", "publish", "web app", "mcp server", "api",
     "monitor", "dashboard", "logs", "annotation system", "integrations",
     "knowledge", "create", "manage", "test retrieval", "integrate in apps",
-    # P0-Rebuild: 404 page noise
+    # 404 page noise
     "page not found", "we couldn't find the page",
     "maybe you were looking for", "jump to", "return to",
-    # P0-Rebuild: GitHub repo nav noise
+    # GitHub repo nav noise
     "readme", "pull requests", "issues", "actions", "releases",
     "packages", "environments", "wiki", "security", "insights",
     "settings", "profile", "your repositories",
+    # P1 (2026-06-22): Ad/branding noise from third-party ecosystem pages
+    "try langsmith", "get a demo", "langsmith",
+    "langgraph", "langchain",
+    # P1 (2026-06-22): Product branding nav fragments
+    "dive into dify", "dive into your",
+    # P1 (2026-06-22): Pagination nav elements
+    "next  i", "next  ⌘", "prev",
 }
 BUSINESS_KEYWORDS = [
     "pricing", "free tier", "free plan", "subscription", "credit", "cost", "fee",
