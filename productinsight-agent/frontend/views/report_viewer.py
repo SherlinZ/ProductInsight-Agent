@@ -17,7 +17,7 @@ from frontend.common.api import get_json
 from frontend.common.config import API_BASE
 
 _DAG_APP_URL = os.environ.get(
-    "DAG_APP_URL", "http://172.18.40.105:3001"
+    "DAG_APP_URL", "http://localhost:3001"
 )
 
 _md_renderer = MarkdownIt("default", options_update={"html": True})
@@ -296,11 +296,21 @@ def _preprocess(content: str, registry: dict) -> str:
     for old, new in replacements:
         content = content.replace(old, new)
 
-    # 3a. Fix markdown artifacts: standalone "## |" or "### |" lines (created by
-    #     markdown conversion from `<h2>` / `<h3>` tags) are parsed as section
-    #     headers by markdown-it, which prevents the table below them from being
-    #     recognized as a table block. Strip the leading header prefix so they
-    #     become normal table rows again.
+    # 3a. Fix "### Header\n\n| table" where a blank line separates a
+    #     markdown header from a table. This prevents _replace_table_block's regex
+    #     from matching the whole table as one contiguous block. We delete the
+    #     header line entirely (consuming the blank lines too) so the table row
+    #     immediately follows — becoming a valid contiguous block.
+    #
+    #     e.g. "### 选型建议速查\n\n| 团队类型 |" → "| 团队类型 |"
+    #     (header line + its trailing blank lines removed; table starts on next line)
+    #
+    #     Also handle "## |" or "### |" on the same line by stripping the prefix.
+    content = re.sub(
+        r"(?m)^#{1,4}\s+[^\n]+\n+(?=\|)",
+        "",
+        content,
+    )
     content = re.sub(r"(?m)^#{1,3}\s+\|(.*)$", r"|\1", content)
 
     # 3. Convert ALL markdown tables to HTML in one clean pass.
@@ -310,12 +320,46 @@ def _preprocess(content: str, registry: dict) -> str:
         body_rows = rows[1:]
 
         def safe(text: str) -> str:
-            return (text
-                    .replace("&", "&amp;")
-                    .replace("<", "&lt;")
-                    .replace(">", "&gt;"))
+            # P0-Fix: Handle existing HTML tags from _enrich_citations.
+            # _enrich_citations generates <a> tags BEFORE this function runs.
+            # We use placeholder tokens to protect those tags from HTML escaping,
+            # then restore them after the escaping step.
+            # Step 1: Protect existing <a ...> tags
+            _PLACEHOLDER_RE = re.compile(r'<a\s[^>]*>.*?</a>', re.DOTALL)
+            _PREFIX = "\x00HTML_TAG_"
+            _SUFFIX = "\x00"
+            protected = {}
+            def _protect(m):
+                key = f"{_PREFIX}{len(protected)}{_SUFFIX}"
+                protected[key] = m.group(0)
+                return key
+            text = _PLACEHOLDER_RE.sub(_protect, text)
+
+            # Step 2: Convert markdown **bold** / *italic* to HTML
+            text = re.sub(r'\*\*(.+?)\*\*', r'<strong>\1</strong>', text)
+            text = re.sub(r'\*(.+?)\*', r'<em>\1</em>', text)
+
+            # Step 3: HTML-escape remaining special characters
+            text = (text
+                .replace("&", "&amp;")
+                .replace("<", "&lt;")
+                .replace(">", "&gt;")
+                .replace('"', "&quot;"))
+
+            # Step 4: Restore protected HTML tags
+            for key, tag in protected.items():
+                text = text.replace(key, tag)
+
+            # Step 5: Collapse newlines in table cells
+            text = text.replace("\n", " ")
+            return text
 
         def enrich_cell(text: str) -> str:
+            # P0-Fix: Call _enrich_citations BEFORE safe() escaping.
+            # The old order (safe first → _enrich_citations) caused <a> tags
+            # to be HTML-escaped into &lt;a&gt; literal text in the rendered page.
+            # _enrich_citations generates <a class="ev-cite"> which is safe —
+            # URLs don't contain " so double-quoted attributes are fine.
             text = text.strip()
             if not text:
                 return ""
@@ -373,6 +417,11 @@ def _preprocess(content: str, registry: dict) -> str:
 
     # Block pattern: consecutive lines that all start with one or more | characters.
     # The \|+ handles both single-pipe tables (| A |) and double-pipe tables (|| A |).
+    # Pre-process: remove blank lines that appear between table rows so the regex
+    # can always find a contiguous block.  (Some report generators emit "| header |\n\n|---|---|...|".)
+    # \n+ instead of \n: matches one OR MORE newlines so it handles any number of blank lines
+    # between table header, separator, and data rows.
+    content = re.sub(r"(?<=\|)\n+(?=\|)", "\n", content)
     content = re.sub(
         r"(?:\|[^\n]*\|)(?:\n(?:\|[^\n]*\|))+",
         _replace_table_block,
