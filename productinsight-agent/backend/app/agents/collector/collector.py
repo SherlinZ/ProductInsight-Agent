@@ -9,7 +9,7 @@ import json
 import logging
 import uuid
 import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor, as_completed, wait, FIRST_COMPLETED, wait
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -212,13 +212,24 @@ class CollectorAgent:
 
         # --- Phase 2: Parallel fetch with per-URL time budget and global timeout ---
         # Per-URL hard limit: prevents Playwright from blocking indefinitely on anti-bot sites.
-        # Uses thread.submit time tracking + future cancellation to enforce the budget.
-        PER_URL_TIMEOUT = 15  # P1-Fix: reduced from 40s to 15s. If a URL can't connect in 15s, it's unreachable from this server.
-                              # 8 URLs × 4 workers = ~30s total, well within typical node timeout budgets.
+        # Uses concurrent.futures.wait() with timeout to enforce per-URL budget.
+        PER_URL_TIMEOUT = 25  # P1-Hotfix: raised from 15s to 25s. coze.cn needs Playwright (5-14s solo, up to +6s
+                              # under concurrent browser load). Under 20s it can be killed mid-render.
         # File-based checkpoint: write partial results incrementally so timeout
         # doesn't lose data. Main thread reads this on timeout; cleaned up on success.
-        _ckpt_path = Path(f"/tmp/collector_ckpt_{run_id}.json")
-        _ckpt_lock_path = Path(f"/tmp/collector_ckpt_{run_id}.lock")
+        # P1-Redesign (2026-06-18): include product_id in checkpoint filename so parallel
+        # per-product collector instances don't overwrite each other.
+        _product_key_part = ""
+        if products:
+            _first = products[0]
+            _product_key_part = (
+                _first.get("product_id")
+                or _first.get("product_name")
+                or _first.get("name")
+                or "single"
+            ).replace("/", "_").replace(" ", "_").lower()
+        _ckpt_path = Path(f"/tmp/collector_ckpt_{run_id}_{_product_key_part}.json")
+        _ckpt_lock_path = Path(f"/tmp/collector_ckpt_{run_id}_{_product_key_part}.lock")
         _results: list[dict[str, Any]] = []
         _ckpt_collected = 0
         _ckpt_failed = 0
@@ -240,13 +251,14 @@ class CollectorAgent:
                 pass
 
         def _fetch_one(task: dict[str, Any]) -> dict[str, Any]:
-            """Fetch one URL. Hard timeout enforced by the main loop's future tracking."""
-            return fetch_url_with_fallback(
+            """Fetch one URL with per-URL timeout enforced by wait()."""
+            result = fetch_url_with_fallback(
                 task["url"],
                 per_url_timeout=8,
                 search_provider=self._get_search_provider(),
                 product_name=task.get("product_name"),
             )
+            return result
 
         def _time_remaining() -> float:
             return max(0, total_timeout - (time.perf_counter() - overall_start))
@@ -262,7 +274,7 @@ class CollectorAgent:
         )
 
         with ThreadPoolExecutor(max_workers=MAX_PARALLEL_FETCHES) as executor:
-            pending_futures: dict = {}  # future -> (task, submit_time)
+            pending_futures: dict = {}  # future -> task
 
             # Track fast failures for early exit: if multiple URLs time out quickly,
             # the network/server likely can't reach these hosts — don't waste time on all URLs.
@@ -273,37 +285,31 @@ class CollectorAgent:
             for task in urls_to_fetch:
                 if _time_remaining() <= 0:
                     logger.warning("CollectorAgent: total timeout reached before all URLs submitted, skipping remaining")
-                    skipped_count += len(urls_to_fetch) - len(pending_futures)
+                    _ckpt_skipped += len(urls_to_fetch) - len(pending_futures)
                     break
                 future = executor.submit(_fetch_one, task)
-                pending_futures[future] = (task, time.perf_counter())
+                pending_futures[future] = task
 
-            # Collect results as they complete, reaping each one
+            # Collect results using concurrent.futures.wait() with per-batch timeout.
+            # wait(return_when=as_completed) returns as soon as ANY future completes.
+            # A 2s timeout ensures we re-check _time_remaining() and the global deadline frequently.
             while pending_futures:
-                done_futures = []
-                exit_while = False
-                for future in list(pending_futures.keys()):
-                    task, submit_time = pending_futures[future]
-                    elapsed = time.perf_counter() - submit_time
+                if _time_remaining() <= 0:
+                    logger.warning("CollectorAgent: global timeout reached, cancelling remaining futures")
+                    for f in pending_futures:
+                        f.cancel()
+                    pending_futures.clear()
+                    break
 
-                    if future.done():
-                        done_futures.append(future)
-                    elif elapsed >= PER_URL_TIMEOUT:
-                        # Per-URL hard timeout — cancel this future
-                        future.cancel()
-                        logger.warning(
-                            "CollectorAgent: cancelled URL %s (elapsed=%.1fs >= PER_URL_TIMEOUT=%ds)",
-                            task.get("url"), elapsed, PER_URL_TIMEOUT,
-                        )
-                        done_futures.append(future)
-                    elif _time_remaining() <= 0:
-                        # Global timeout — cancel this future and continue checking others
-                        future.cancel()
-                        exit_while = True
+                done_futures, still_pending = wait(
+                    pending_futures,
+                    timeout=2.0,
+                    return_when=FIRST_COMPLETED,
+                )
 
-                # Process completed / cancelled futures
+                # Process all completed futures
                 for future in done_futures:
-                    task, _ = pending_futures.pop(future)
+                    task = pending_futures.pop(future)
                     try:
                         result = future.result(timeout=1)
                     except Exception as exc:
@@ -320,6 +326,7 @@ class CollectorAgent:
                     result["_task"] = task
                     _results.append(result)
 
+                    elapsed = time.perf_counter() - overall_start
                     if result.get("error_message"):
                         _ckpt_failed += 1
                     else:
@@ -336,10 +343,8 @@ class CollectorAgent:
                                 _consecutive_fast_fails,
                             )
                             for f in pending_futures:
-                                if f not in done_futures:
-                                    f.cancel()
+                                f.cancel()
                             pending_futures.clear()
-                            exit_while = True
                             break
 
                     if (_ckpt_collected + _ckpt_failed) % 5 == 0:
@@ -355,16 +360,43 @@ class CollectorAgent:
                         len(result.get("raw_text", "")),
                     )
 
-                # Check if we should exit the while loop
-                if exit_while:
-                    logger.warning("CollectorAgent: global timeout reached, cancelling remaining")
-                    for f in pending_futures:
-                        f.cancel()
-                    pending_futures.clear()
-                    break
+                # If wait() timed out with no done futures, check per-URL timeout for still-pending ones
+                if not done_futures and still_pending:
+                    for future in list(still_pending):
+                        f_elapsed = time.perf_counter() - overall_start
+                        if f_elapsed >= PER_URL_TIMEOUT:
+                            future.cancel()
+                            task = pending_futures.pop(future)
+                            result = {
+                                "error_message": f"Per-URL timeout ({PER_URL_TIMEOUT}s) exceeded",
+                                "status_code": 0,
+                                "raw_text": "",
+                                "raw_html": "",
+                                "title": "",
+                                "domain": "",
+                                "content_hash": "",
+                                "fetched_at": now,
+                            }
+                            result["_task"] = task
+                            _results.append(result)
+                            _ckpt_failed += 1
+                            logger.warning(
+                                "CollectorAgent: cancelled URL %s (elapsed>=%.1fs >= PER_URL_TIMEOUT=%ds)",
+                                task.get("url"), f_elapsed, PER_URL_TIMEOUT,
+                            )
+
+                # Keep parallelism topped up: submit new tasks for any URLs not yet started
+                if len(pending_futures) < MAX_PARALLEL_FETCHES:
+                    remaining = urls_to_fetch[len(_results):]
+                    for task in remaining:
+                        if _time_remaining() <= 0:
+                            _ckpt_skipped += len(remaining)
+                            break
+                        future = executor.submit(_fetch_one, task)
+                        pending_futures[future] = task
+
                 if not pending_futures:
                     break
-                time.sleep(0.5)
 
         # Read from checkpoint (works whether we finished or timed out)
         if _ckpt_path.exists():
@@ -388,6 +420,7 @@ class CollectorAgent:
         skipped_count = _ckpt_skipped
 
         elapsed = time.perf_counter() - overall_start
+        print(f"[TRACE CollectorAgent] Phase2 COMPLETE — elapsed={elapsed:.2f}s collected={collected_count} failed={failed_count} skipped={skipped_count} results_count={len(results)}", flush=True)
         logger.info(
             "CollectorAgent: parallel fetch done in %.1fs — collected=%d failed=%d skipped=%d",
             elapsed, collected_count, failed_count, skipped_count,
