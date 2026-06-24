@@ -15,7 +15,7 @@ from frontend.common.api import get_json
 from frontend.common.config import API_BASE
 
 _DAG_APP_URL = os.environ.get(
-    "DAG_APP_URL", "http://172.18.40.105:3001"
+    "DAG_APP_URL", "http://localhost:3001"
 )
 _REPORTS_DIR = os.path.join(
     os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
@@ -104,6 +104,34 @@ def render_runs_page(run_id: str = None) -> None:
     # Sort newest first by created_at
     enriched.sort(key=lambda r: r.get("created_at") or 0, reverse=True)
 
+    # Collect all distinct project_ids from runs (DB column + task_brief fallback)
+    project_ids: set = set()
+    for r in all_runs:
+        pid = r.get("project_id")
+        if not pid:
+            pid = (r.get("task_brief") or {}).get("project_id")
+        if pid:
+            project_ids.add(pid)
+    project_ids = sorted(project_ids)
+    project_options = ["all"] + project_ids
+    default_project_idx = 0
+    if project_ids:
+        # Respect query param first, then session state
+        init_project = st.query_params.get("project_id", st.session_state.get("_runs_project_filter", "all"))
+        if init_project in project_options:
+            default_project_idx = project_options.index(init_project)
+
+    selected_project = st.selectbox(
+        "Project",
+        options=project_options,
+        index=default_project_idx,
+    )
+    if selected_project != "all":
+        st.query_params["project_id"] = selected_project
+    else:
+        st.query_params.pop("project_id", None)
+    st.session_state["_runs_project_filter"] = selected_project
+
     # ── Filters ───────────────────────────────────────────────────────────────
     status_filter = st.selectbox(
         "Status",
@@ -122,6 +150,11 @@ def render_runs_page(run_id: str = None) -> None:
         filtered = [r for r in filtered if r.get("_report") is not None]
     elif quality_filter == "real only":
         filtered = [r for r in filtered if r.get("_is_real")]
+    if selected_project != "all":
+        filtered = [
+            r for r in filtered
+            if (r.get("project_id") or (r.get("task_brief") or {}).get("project_id")) == selected_project
+        ]
 
     real_count = sum(1 for r in filtered if r.get("_is_real"))
     report_count = sum(1 for r in filtered if r.get("_report") is not None)
@@ -137,8 +170,8 @@ def render_runs_page(run_id: str = None) -> None:
         return
 
     # ── Table header ─────────────────────────────────────────────────────────
-    cols = st.columns([2, 2, 1, 1, 1, 1, 2])
-    for c, h in zip(cols, ["Run ID", "Mode", "Status", "Created", "MD Size", "Quality", "Actions"]):
+    cols = st.columns([2, 2, 2, 1, 1, 1, 1, 1, 2])
+    for c, h in zip(cols, ["Run ID", "Mode", "Project", "Status", "Created", "MD Size", "Quality", "DAG", "Report"]):
         c.markdown(f"**{h}**")
     st.markdown("")
 
@@ -151,26 +184,41 @@ def render_runs_page(run_id: str = None) -> None:
         md_kb = r.get("_md_kb", 0)
         is_real = r.get("_is_real", False)
         has_report = r.get("_report") is not None
+        proj_id = r.get("project_id") or (r.get("task_brief") or {}).get("project_id", "—")
 
         with st.container():
-            row_cols = st.columns([2, 2, 1, 1, 1, 1, 2])
+            row_cols = st.columns([2, 2, 2, 1, 1, 1, 1, 1, 2])
 
             row_cols[0].code(rid[:18] + "..." if len(rid) > 18 else rid)
             row_cols[1].text(mode)
-            row_cols[2].markdown(_status_label(status))
-            row_cols[3].text(created)
+
+            # Project column: clickable link that navigates to Project Workspace for this run's project
+            if proj_id:
+                proj_short = proj_id[:16] + "..."
+                row_cols[2].markdown(
+                    f'{proj_short}  <a href="?project_id={proj_id}" style="font-size:11px;color:#0083f8;">[open]</a>',
+                    unsafe_allow_html=True,
+                )
+            else:
+                row_cols[2].text("—")
+
+            row_cols[3].markdown(_status_label(status))
+            row_cols[4].text(created)
             if has_report:
-                row_cols[4].markdown(
+                row_cols[5].markdown(
                     f":green[**{md_kb}KB**]" if is_real else f":orange[{md_kb}KB]"
                 )
             else:
-                row_cols[4].text("—")
+                row_cols[5].text("—")
             badge = "🏆" if is_real else ("⚠" if has_report else "—")
-            row_cols[5].text(badge)
+            row_cols[6].text(badge)
 
             dag_url = f"{_DAG_APP_URL}/?run_id={rid}"
-            row_cols[6].markdown(
-                f'<a href="{dag_url}" target="_blank" style="display:inline-block;padding:3px 7px;background:#0083f8;color:white;border-radius:4px;font-size:12px;text-decoration:none;margin-right:4px;">DAG</a>'
+            row_cols[7].markdown(
+                f'<a href="{dag_url}" target="_blank" style="display:inline-block;padding:3px 7px;background:#0083f8;color:white;border-radius:4px;font-size:12px;text-decoration:none;">DAG</a>',
+                unsafe_allow_html=True,
+            )
+            row_cols[8].markdown(
                 f'<a href="?viewer={rid}" style="display:inline-block;padding:3px 7px;background:#00a060;color:white;border-radius:4px;font-size:12px;text-decoration:none;">Report</a>',
                 unsafe_allow_html=True,
             )
