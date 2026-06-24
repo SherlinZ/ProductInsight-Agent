@@ -70,6 +70,30 @@ logger = logging.getLogger(__name__)
 # C2: Multi-type default URLs per product (primary / pricing / docs / github / blog).
 # Used by plan_sources for auto-fill when user provides only a product name.
 PRODUCT_DEFAULT_URLS: dict[str, dict[str, str | list[str]]] = {
+    # ── AI Coding Tools ────────────────────────────────────────────────────────
+    "cursor": {
+        "primary": "https://www.cursor.com",
+        "docs": "https://www.cursor.com/docs",
+        "pricing": "https://www.cursor.com/pricing",
+    },
+    "codex": {
+        "primary": "https://openai.com/index/openai-codex/",
+        "docs": "https://platform.openai.com/docs/guides/code",
+        "github": "https://github.com/openai/codex",
+    },
+    "trae": {
+        "primary": "https://trae.ai",
+        "docs": "https://docs.trae.ai",
+        "pricing": "https://trae.ai/pricing",
+        "blog": "https://trae.ai/blog/official-launch",
+    },
+    "cloudecode": {
+        "primary": "https://www.volcengine.com/product/cloudecode",
+        "docs": "https://www.volcengine.com/docs/6458/1166378",
+        "pricing": "https://www.volcengine.com/product/cloudecode/pricing",
+        "github": "https://github.com/volcengine/cloudecode",
+    },
+    # ── AI Agent Platforms ────────────────────────────────────────────────────
     "coze": {
         "primary": "https://www.coze.cn",
         "pricing": "https://www.coze.cn/pricing",
@@ -90,11 +114,229 @@ PRODUCT_DEFAULT_URLS: dict[str, dict[str, str | list[str]]] = {
         "primary": "https://fastgpt.cn",
         "docs": "https://doc.fastgpt.cn",
     },
-    # Generic domain-level defaults (kept for products not in the map above)
+    # ── Search / AI Search ────────────────────────────────────────────────────
+    "perplexity": {
+        "primary": "https://www.perplexity.ai",
+        "docs": "https://www.perplexity.ai/home",
+        "blog": "https://www.perplexity.ai/blog",
+    },
+    "you": {
+        "primary": "https://you.com",
+        "docs": "https://you.com/docs",
+    },
+    "phind": {
+        "primary": "https://www.phind.com",
+        "github": "https://github.com/phind-com",
+    },
+    # ── Enterprise / B2B SaaS ─────────────────────────────────────────────────
+    "notion": {
+        "primary": "https://www.notion.so",
+        "pricing": "https://www.notion.so/pricing",
+        "docs": "https://www.notion.so/help",
+    },
+    "confluence": {
+        "primary": "https://www.atlassian.com/software/confluence",
+        "pricing": "https://www.atlassian.com/software/confluence/download",
+        "docs": "https://confluence.atlassian.com/",
+    },
+    "linear": {
+        "primary": "https://linear.app",
+        "pricing": "https://linear.app/pricing",
+        "docs": "https://linear.app/docs",
+    },
+    "jira": {
+        "primary": "https://www.atlassian.com/software/jira",
+        "pricing": "https://www.atlassian.com/software/jira/pricing",
+        "docs": "https://docs.atlassian.com/jira-software",
+    },
+    "slack": {
+        "primary": "https://slack.com",
+        "pricing": "https://slack.com/pricing",
+        "docs": "https://slack.com/help",
+    },
+    "asana": {
+        "primary": "https://asana.com",
+        "pricing": "https://asana.com/pricing",
+        "docs": "https://asana.com/guide",
+    },
+    "monday": {
+        "primary": "https://monday.com",
+        "pricing": "https://monday.com/pricing",
+        "docs": "https://monday.com/documentation",
+    },
+    "hubspot": {
+        "primary": "https://www.hubspot.com",
+        "pricing": "https://www.hubspot.com/pricing",
+        "docs": "https://developers.hubspot.com/",
+    },
+    "salesforce": {
+        "primary": "https://www.salesforce.com",
+        "pricing": "https://www.salesforce.com/editions-pricing/",
+        "docs": "https://developer.salesforce.com/docs",
+    },
+    "zendesk": {
+        "primary": "https://www.zendesk.com",
+        "pricing": "https://www.zendesk.com/pricing/",
+        "docs": "https://developer.zendesk.com/",
+    },
+    "intercom": {
+        "primary": "https://www.intercom.com",
+        "pricing": "https://www.intercom.com/pricing",
+        "docs": "https://developers.intercom.com/",
+    },
+    "segment": {
+        "primary": "https://segment.com",
+        "pricing": "https://segment.com/pricing/",
+        "docs": "https://segment.com/docs/",
+    },
+    "mixpanel": {
+        "primary": "https://www.mixpanel.com",
+        "pricing": "https://www.mixpanel.com/pricing/",
+        "docs": "https://developer.mixpanel.com/",
+    },
+    # ── Productivity / Docs ───────────────────────────────────────────────────
+    "obsidian": {
+        "primary": "https://obsidian.md",
+        "pricing": "https://obsidian.md/pricing",
+        "docs": "https://help.obsidian.md/",
+    },
+    "readwise": {
+        "primary": "https://readwise.io",
+        "docs": "https://help.readwise.io/",
+    },
+    # ── E-commerce / CRM ───────────────────────────────────────────────────────
+    "shopify": {
+        "primary": "https://www.shopify.com",
+        "pricing": "https://www.shopify.com/pricing",
+        "docs": "https://shopify.dev/docs",
+    },
+    "woocommerce": {
+        "primary": "https://woocommerce.com",
+        "pricing": "https://woocommerce.com/pricing/",
+        "docs": "https://woocommerce.com/documentation/woocommerce-docs/",
+        "github": "https://github.com/woocommerce/woocommerce",
+    },
+    "bigcommerce": {
+        "primary": "https://www.bigcommerce.com",
+        "pricing": "https://www.bigcommerce.com/pricing/",
+        "docs": "https://www.bigcommerce.com/docs/",
+    },
+    "magento": {
+        "primary": "https://business.adobe.com/products/magento/magento-commerce.html",
+        "docs": "https://developer.adobe.com/commerce/docs/",
+        "github": "https://github.com/magento/magento2",
+    },
+    # ── AI Products ───────────────────────────────────────────────────────────
+    "chatgpt": {
+        "primary": "https://openai.com/index/chatgpt",
+        "docs": "https://platform.openai.com/docs/",
+        "chat": "https://chat.openai.com",
+        "blog": "https://openai.com/blog",
+        "research": "https://openai.com/research",
+    },
+    "claude": {
+        "primary": "https://claude.ai",
+        "docs": "https://docs.anthropic.com/",
+    },
+    "gemini": {
+        "primary": "https://ai.google.dev",
+        "docs": "https://ai.google.dev/docs",
+    },
+    "groq": {
+        "primary": "https://console.groq.com",
+        "docs": "https://console.groq.com/docs",
+    },
+    "ollama": {
+        "primary": "https://ollama.com",
+        "docs": "https://github.com/ollama/ollama",
+        "github": "https://github.com/ollama/ollama",
+    },
+    "vllm": {
+        "primary": "https://docs.vllm.ai",
+        "github": "https://github.com/vllm-project/vllm",
+    },
+    # ── Collaborative / Dev Tools ────────────────────────────────────────────
+    "github": {
+        "primary": "https://github.com",
+        "pricing": "https://github.com/pricing",
+        "docs": "https://docs.github.com/en",
+    },
+    "gitlab": {
+        "primary": "https://about.gitlab.com",
+        "pricing": "https://about.gitlab.com/pricing/",
+        "docs": "https://docs.gitlab.com/",
+    },
+    "vercel": {
+        "primary": "https://vercel.com",
+        "pricing": "https://vercel.com/pricing",
+        "docs": "https://vercel.com/docs",
+    },
+    "netlify": {
+        "primary": "https://www.netlify.com",
+        "pricing": "https://www.netlify.com/pricing/",
+        "docs": "https://docs.netlify.com/",
+    },
+    # ── Generic domain-level defaults ─────────────────────────────────────────
     "default": {
         "primary": "",
     },
 }
+
+
+def _resolve_product_urls(product: dict[str, Any]) -> list[str]:
+    """
+    Resolve seed URLs for a product using multiple strategies.
+
+    Strategy 1: Explicit seed_urls / official_website already provided → return as-is.
+    Strategy 2: Known product in PRODUCT_DEFAULT_URLS → use predefined URLs.
+    Strategy 3: Unknown product → construct plausible URLs from product name using
+                a domain-aware pattern (e.g., product "Foo" → foo.com, docs.foo.com).
+    Strategy 4: No URL possible → return empty list (LLM-based URL discovery will
+                be triggered by _perform_source_discovery in collect_sources).
+
+    This removes the hardcoded 4-product limitation and makes the system work
+    with ANY domain product.
+    """
+    name = product.get("product_name", "")
+    slug = product.get("product_slug", "") or name.lower().replace(" ", "-").replace("_", "-")
+
+    # Strategy 1: already has URLs
+    existing = product.get("seed_urls", [])
+    if isinstance(existing, str):
+        existing = [existing]
+    if existing:
+        return [u.strip() for u in existing if u.strip()]
+
+    official = product.get("official_website", "")
+    if official:
+        return [official.strip()]
+
+    # Strategy 2: known product
+    key = slug.lower()
+    if key in PRODUCT_DEFAULT_URLS and key != "default":
+        mapping = PRODUCT_DEFAULT_URLS[key]
+        urls = []
+        for k in ("primary", "pricing", "docs", "github", "blog"):
+            v = mapping.get(k)
+            if v:
+                urls.extend(v if isinstance(v, list) else [v])
+        if urls:
+            return urls
+
+    # Strategy 3: construct plausible URLs for unknown products
+    # Use product slug as domain base (lowercase, no spaces)
+    domain_base = slug.lower().replace(" ", "").replace("-", "")
+    constructed: list[str] = []
+    for base in (f"https://www.{domain_base}.com", f"https://{domain_base}.io",
+                 f"https://{domain_base}.ai", f"https://{domain_base}.cn"):
+        constructed.append(base)
+
+    logger.info(
+        "plan_sources: constructed %d candidate URLs for unknown product '%s' (slug='%s'). "
+        "collect_sources will filter via robots.txt check.",
+        len(constructed), name, slug,
+    )
+    return constructed
 
 
 def utc_now() -> str:
@@ -120,6 +362,87 @@ def _reviewer():
 def _collector():
     from backend.app.agents.collector.collector import CollectorAgent
     return CollectorAgent()
+
+
+# ─────────────────────────────────────────────────────────────────
+# Thread-local storage for parallel product collection
+#
+# Each per-product worker thread needs its own DB connection because
+# SQLite connections are NOT thread-safe. ThreadPoolExecutor workers
+# share this dict via threading.local() — each thread sees its own
+# Repository instance backed by its own sqlite3.Connection.
+#
+# Without this, parallel writes from N workers to the same SQLite
+# connection raise "SQLite objects created in a thread can only be
+# used in that same thread".
+# ─────────────────────────────────────────────────────────────────
+import threading as _threading
+_thread_local_repo = _threading.local()
+
+
+def _get_thread_repo(repo_cls):
+    """Return a thread-local Repository instance (one connection per worker)."""
+    if not hasattr(_thread_local_repo, "_repos"):
+        _thread_local_repo._repos = {}
+    cache = _thread_local_repo._repos
+    name = repo_cls.__name__
+    if name not in cache:
+        cache[name] = repo_cls()
+    return cache[name]
+
+
+def _reset_thread_repos() -> None:
+    """Drop thread-local repository cache (call at end of parallel block)."""
+    if hasattr(_thread_local_repo, "_repos"):
+        _thread_local_repo._repos.clear()
+
+
+def _collect_one_product_sync(
+    agent,
+    product: dict,
+    source_plan_template: dict,
+    run_id: str,
+    per_product_timeout: int,
+) -> dict:
+    """Collect URLs for ONE product independently.
+
+    Returns the same dict shape as CollectorAgent.collect():
+        {"sources": [...], "snapshots": [...], "raw_documents": [...],
+         "collection_stats": {...}}
+    Safe to call from a ThreadPoolExecutor worker.
+    """
+    # Per-product source_plan: single product + global target_source_types
+    sp = {
+        "products": [product],
+        "target_source_types": source_plan_template.get("target_source_types", []),
+        "discovered_products_with_urls": [],
+        "supplement_products": [],
+    }
+    try:
+        result = agent.collect(sp, run_id, mode="real_time", total_timeout=per_product_timeout)
+        return result or {
+            "sources": [],
+            "snapshots": [],
+            "raw_documents": [],
+            "collection_stats": {"collected": 0, "failed": 0, "total_urls": 0},
+        }
+    except Exception as exc:
+        _collect_logger_local.error(
+            "_collect_one_product_sync failed for product=%s: %s",
+            product.get("product_name", product.get("product_id", "")),
+            exc,
+        )
+        return {
+            "sources": [],
+            "snapshots": [],
+            "raw_documents": [],
+            "collection_stats": {"collected": 0, "failed": 1, "total_urls": 0, "error": str(exc)},
+        }
+
+
+# Module-local logger for the parallel helper
+import logging as _logging
+_collect_logger_local = _logging.getLogger(__name__)
 
 
 def _resolve_to_product(row: dict) -> str:
@@ -161,9 +484,11 @@ def _fact_extractor():
 
 
 def _db_query(sql: str, params: tuple = ()) -> list[dict[str, Any]]:
-    """Execute a read-only SQL query and return list of dicts."""
+    """Execute a read-only SQL query and return list of dicts with parsed JSON columns."""
+    import sqlite3
     from backend.app.storage.db import get_connection
     with get_connection() as conn:
+        conn.row_factory = sqlite3.Row
         rows = conn.execute(sql, params).fetchall()
     return [dict(row) for row in rows]
 
@@ -616,7 +941,22 @@ def build_task_brief(state: WorkflowState) -> WorkflowState:
         state.get("run_id"),
         len(tb.get("products", [])),
     )
-    
+
+    # P0-Fix: Re-resolve seed URLs for all products that have stale placeholder
+    # "official_website" values from a previous failed run. This ensures that even
+    # if task_brief was restored from the DB with garbage "To be collected during research"
+    # placeholders, plan_sources won't skip the URL resolution step.
+    _PLACEHOLDER_VALS = {
+        "to be collected during research", "tbd", "pending",
+        "", "none", "null", "n/a",
+    }
+    for p in tb.get("products", []):
+        off = (p.get("official_website") or "").strip().lower()
+        if off in _PLACEHOLDER_VALS:
+            p["official_website"] = ""
+        if not (p.get("seed_urls") or []):
+            p["seed_urls"] = []
+
     state["task_brief"] = tb
     return state
 
@@ -1178,32 +1518,32 @@ def plan_sources(state: WorkflowState) -> WorkflowState:
         _original_seed_urls_count,
     )
 
-    # Auto-fill seed URLs for known products that have no URLs provided
+    # Auto-fill seed URLs for all products using the flexible resolver.
+    # _resolve_product_urls handles known products, URL construction for unknown products,
+    # and gracefully falls back to LLM-based discovery for unresolvable products.
     for product in products:
-        pid = (product.get("product_id") or "").lower()
-        pname = (product.get("product_name") or "").lower()
-        key = pid if pid in ("fastgpt", "dify", "coze", "flowise") else (
-            pname if pname in ("fastgpt", "dify", "coze", "flowise") else None
-        )
-        logger.warning(
-            "plan_sources: product '%s' (pid='%s' pname='%s') key='%s' has_urls=%s",
-            product.get("product_name", ""), pid, pname, key,
-            bool(product.get("seed_urls") or product.get("official_website")),
-        )
-        if key and not product.get("seed_urls") and not product.get("official_website"):
-            mapping = PRODUCT_DEFAULT_URLS.get(key, {})
-            if mapping:
-                urls = []
-                for k in ("primary", "pricing", "docs", "github", "blog"):
-                    v = mapping.get(k)
-                    if not v:
-                        continue
-                    if isinstance(v, list):
-                        urls.extend(v)
-                    else:
-                        urls.append(v)
-                if urls:
-                    product["seed_urls"] = urls
+        # Always resolve seed URLs from PRODUCT_DEFAULT_URLS for known products.
+        # If official_website is a stale placeholder from a previous failed run
+        # ("To be collected during research"), clear it so _resolve_product_urls
+        # can re-generate fresh URLs.
+        official = product.get("official_website", "")
+        placeholders = ("to be collected during research", "tbd", "pending", "")
+        if official.lower().strip() in placeholders:
+            product["official_website"] = ""
+        if not product.get("seed_urls") and not product.get("official_website"):
+            resolved = _resolve_product_urls(product)
+            if resolved:
+                product["seed_urls"] = resolved
+                logger.info(
+                    "plan_sources: resolved %d URL(s) for product '%s' (slug='%s')",
+                    len(resolved), product.get("product_name", ""), product.get("product_slug", ""),
+                )
+            else:
+                logger.info(
+                    "plan_sources: could not resolve URLs for product '%s' (slug='%s') — "
+                    "will use LLM-based discovery",
+                    product.get("product_name", ""), product.get("product_slug", ""),
+                )
 
     # Check which products need discovery
 
@@ -1284,15 +1624,7 @@ def collect_sources(state: WorkflowState) -> WorkflowState:
     If not configured, creates human intervention.
     """
     import logging as _collect_logger
-    _collect_logger.critical(
-        "!!! COLLECT_SOURCES ENTER !!! run_id=%s, mode=%s, task_brief_products=%s, source_plan_products=%s",
-        state.get("run_id"),
-        state.get("mode"),
-        [{"name": p.get("product_name"), "seed_urls": p.get("seed_urls", []),
-          "official_website": p.get("official_website", "")} for p in (state.get("task_brief") or {}).get("products", [])],
-        [{"name": p.get("product_name"), "seed_urls": p.get("seed_urls", []),
-          "official_website": p.get("official_website", "")} for p in (state.get("source_plan") or {}).get("products", [])],
-    )
+    import time as _time
     run_id = state.get("run_id", "")
     project_id = state.get("project_id")
     mode = state.get("mode", "real_time")
@@ -1447,22 +1779,24 @@ def collect_sources(state: WorkflowState) -> WorkflowState:
                         )
                 else:
                     # P1-Fix: Before running discovery, do a runtime health check.
-                    # config.is_configured only checks API key presence; the API may be
-                    # unreachable (network timeout, rate limit). If health check fails,
-                    # skip discovery and go straight to URL fetch — the fallback mechanism
-                    # in fetch_url_with_fallback will still use search snippets if needed.
+                    # P1 (2026-06-22): Reduced from 50s to 10s. Doubao web_search is healthy
+                    # when it responds in 2-6s; unhealthy endpoints that need 3×30s retries to
+                    # fail will still fail within 10s. A 50s health probe is too slow and
+                    # wastes budget on what is already a known-slow call pattern.
                     provider_healthy = False
+                    provider_slow = False
                     try:
                         from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
-                        HEALTH_TIMEOUT = 20  # seconds — Doubao Responses API typically needs 15-25s
+                        HEALTH_TIMEOUT = 10  # P1 (2026-06-22): 10s is enough for healthy Doubao (2-6s); unhealthy endpoints fail within 10s
                         with ThreadPoolExecutor(max_workers=1) as ex:
                             future = ex.submit(provider.search, "test", 1)
                             test_results = future.result(timeout=HEALTH_TIMEOUT)
                             provider_healthy = True
                     except FuturesTimeoutError:
+                        provider_slow = True
                         logger.warning(
                             "collect_sources (P1-Fix): search provider health check timed out "
-                            "(>%ds). Skipping discovery, proceeding with seed URLs.",
+                            "(>%ds). Treating as potentially slow — Doubao may still work for real queries.",
                             HEALTH_TIMEOUT,
                         )
                     except Exception as exc:
@@ -1472,37 +1806,38 @@ def collect_sources(state: WorkflowState) -> WorkflowState:
                             exc,
                         )
 
-                    if not provider_healthy or all_have_urls:
-                        if all_have_urls:
+                    # Even if health check failed (slow provider) or all products have URLs,
+                    # still try discovery — it supplements and doesn't replace existing URLs.
+                    # Only skip if provider is explicitly unavailable (not slow).
+                    if not provider_healthy:
+                        if provider_slow:
+                            # Slow but potentially working — try actual discovery
                             logger.warning(
-                                "collect_sources (P1-Fix): all %d products have seed URLs — "
-                                "skipping discovery, proceeding with %d seed URLs.",
-                                len(products),
-                                sum(len(p.get("seed_urls", [])) for p in products_with_urls),
+                                "collect_sources (P1-Fix): proceeding with discovery despite slow provider "
+                                "(health check timed out). Doubao may still work for real queries.",
                             )
                         else:
                             logger.warning(
-                                "collect_sources (P1-Fix): search provider unhealthy — "
-                                "skipping discovery, proceeding with seed URLs.",
+                                "collect_sources (P1-Fix): search provider unhealthy (non-timeout error) — "
+                                "skipping discovery.",
                             )
-                        discovery_results = {"discovery_status": "skipped_unhealthy", "candidates": []}
+                            discovery_results = {"discovery_status": "skipped_unavailable", "candidates": []}
                     else:
                         # Provider is healthy: run discovery to supplement seed URLs.
-                        # Discovery finds alternative mirrors/authentic docs for anti-bot sites.
                         discovery_mode = "multi_dimension_supplement" if multi_dimension_mode else "url_gap_fill"
                         logger.info(
                             "collect_sources (P1-Fix): performing discovery for %d products "
-                            "(provider=%s, mode=%s, all_have_urls=%s)",
-                            len(products), provider.provider_name, discovery_mode, all_have_urls,
+                            "(provider=%s, mode=%s)",
+                            len(products), provider.provider_name, discovery_mode,
                         )
                         products_for_discovery = list(products)
                         discovery_results = _perform_source_discovery(
                             run_id=run_id,
                             project_id=project_id,
-                        products_without_urls=products_for_discovery,
-                        discovery_queries=discovery_queries,
-                        source_readiness=source_readiness,
-                    )
+                            products_without_urls=products_for_discovery,
+                            discovery_queries=discovery_queries,
+                            source_readiness=source_readiness,
+                        )
                     source_candidates = discovery_results.get("candidates", [])
                     discovery_status = discovery_results.get("discovery_status", "failed")
                     logger.info(
@@ -1756,95 +2091,191 @@ def collect_sources(state: WorkflowState) -> WorkflowState:
                         sp["product_id"] = product_name_to_id[pname]
 
                 agent = _collector()
-                # P0-Refactor: Use the node-level timeout budget as total_timeout.
-                # Each URL is isolated and gets ~30s max. With 8 parallel workers,
-                # we can handle up to ~240s of URL work in parallel, but the global
-                # budget ensures we stop gracefully when the node timeout fires.
+                # P1-Redesign (2026-06-18): Per-product parallel collection.
+                # Previous behavior: a single agent.collect() call processed all products
+                # with internal ThreadPoolExecutor(4) — all URLs from all products competed
+                # for 4 slots, causing head-of-line blocking for slow URLs.
+                #
+                # New behavior: each product runs in its own worker thread, so N products
+                # finish in roughly max(per_product_time) instead of sum(per_product_time).
+                # This requires thread-local DB connections (see _get_thread_repo) because
+                # SQLite connections are not thread-safe.
                 import backend.app.orchestrator.graph as _graph
                 node_timeout = _graph.NODE_TIMEOUTS.get("collect_sources", 900)
-                _collect_logger.info(
-                    "collect_sources: starting CollectorAgent.collect() with total_timeout=%ds, "
-                    "products=%d urls=%d",
-                    node_timeout,
-                    len(source_plan.get("products", [])),
-                    len([u for p in source_plan.get("products", []) for u in p.get("seed_urls", [])]),
-                )
-                result = agent.collect(source_plan, run_id, mode="real_time", total_timeout=node_timeout)
-                _collect_logger.info(
-                    "collect_sources: CollectorAgent.collect() returned sources=%d snapshots=%d raw_documents=%d",
-                    len(result.get("sources", [])), len(result.get("snapshots", [])),
-                    len(result.get("raw_documents", [])),
+                from concurrent.futures import ThreadPoolExecutor, as_completed
+
+                N = len(all_products_for_collection)
+                # P1-Hotfix: cap at 2 to avoid nested-concurrency resource exhaustion.
+                # Each worker calls agent.collect() which has its own ThreadPoolExecutor(max_workers=4),
+                # launching up to 4 concurrent Playwright browsers. With 4 outer workers: 4×4=16
+                # concurrent browsers = server overload → all time out. Cap at 2 workers → 8 browsers max.
+                max_workers = max(1, min(2, N))
+                # Per-product timeout: split the node budget evenly but never below 180s,
+                # so a single product with many URLs still gets a fair share.
+                per_product_timeout = max(180, node_timeout // max(1, N))
+
+                _collect_logger.warning(
+                    "collect_sources (P1): per-product parallel collection — N=%d, workers=%d, "
+                    "node_timeout=%ds, per_product_timeout=%ds",
+                    N, max_workers, node_timeout, per_product_timeout,
                 )
 
-                sources = result.get("sources", [])
-                snapshots = result.get("snapshots", [])
-                raw_documents = result.get("raw_documents", [])
-                collection_stats = result.get("collection_stats", {})
+                sources: list[dict] = []
+                snapshots: list[dict] = []
+                raw_documents: list[dict] = []
+                collection_stats: dict[str, Any] = {
+                    "collected": 0, "failed": 0, "total_urls": 0, "skipped": 0,
+                    "total_chars": 0, "elapsed_s": 0.0,
+                }
+                if N <= 1:
+                    # Single-product fast path: skip thread overhead
+                    single = all_products_for_collection[0] if all_products_for_collection else {}
+                    sp = {
+                        "products": [single],
+                        "target_source_types": source_plan.get("target_source_types", []),
+                        "discovered_products_with_urls": [],
+                        "supplement_products": [],
+                    }
+                    result = agent.collect(sp, run_id, mode="real_time", total_timeout=node_timeout)
+                    sources = result.get("sources", []) if result else []
+                    snapshots = result.get("snapshots", []) if result else []
+                    raw_documents = result.get("raw_documents", []) if result else []
+                    collection_stats = result.get("collection_stats", collection_stats) if result else collection_stats
+                else:
+                    # Per-product parallel collection
+                    from concurrent.futures import ThreadPoolExecutor, as_completed
+                    import time as _time
+                    t_start = _time.perf_counter()
+                    with ThreadPoolExecutor(
+                        max_workers=max_workers,
+                        thread_name_prefix=f"collect-{run_id[:6]}",
+                    ) as ex:
+                        futures = {
+                            ex.submit(
+                                _collect_one_product_sync,
+                                agent,
+                                p,
+                                source_plan,
+                                run_id,
+                                per_product_timeout,
+                            ): p
+                            for p in all_products_for_collection
+                        }
+                        per_product_results = []
+                        for fut in as_completed(futures):
+                            product = futures[fut]
+                            try:
+                                res = fut.result()
+                                per_product_results.append((product, res))
+                            except Exception as exc:
+                                _collect_logger.error(
+                                    "per-product collect failed for %s: %s",
+                                    product.get("product_name"), exc,
+                                )
+                                per_product_results.append((product, {
+                                    "sources": [], "snapshots": [], "raw_documents": [],
+                                    "collection_stats": {"failed": 1, "error": str(exc)},
+                                }))
+                    elapsed_s = _time.perf_counter() - t_start
+                    _collect_logger.info(
+                        "collect_sources (P1): parallel collection completed in %.1fs (%d products, "
+                        "%d workers)",
+                        elapsed_s, N, max_workers,
+                    )
+                    for product, res in per_product_results:
+                        sources.extend(res.get("sources", []) or [])
+                        snapshots.extend(res.get("snapshots", []) or [])
+                        raw_documents.extend(res.get("raw_documents", []) or [])
+                        ps = res.get("collection_stats", {}) or {}
+                        collection_stats["collected"] = collection_stats.get("collected", 0) + ps.get("collected", 0)
+                        collection_stats["failed"] = collection_stats.get("failed", 0) + ps.get("failed", 0)
+                        collection_stats["total_urls"] = collection_stats.get("total_urls", 0) + ps.get("total_urls", 0)
+                        collection_stats["skipped"] = collection_stats.get("skipped", 0) + ps.get("skipped", 0)
+                        collection_stats["total_chars"] = collection_stats.get("total_chars", 0) + ps.get("total_chars", 0)
+                    collection_stats["elapsed_s"] = elapsed_s
+                    collection_stats["parallel_workers"] = max_workers
+                    collection_stats["parallel_product_count"] = N
+
+                    # Drop thread-local repositories (best-effort cleanup)
+                    _reset_thread_repos()
+
+                _collect_logger.info(
+                    "collect_sources (P1): merged sources=%d snapshots=%d raw_documents=%d",
+                    len(sources), len(snapshots), len(raw_documents),
+                )
 
                 # P0-Fix: If sources are empty (timeout during collect), try to read from checkpoint
                 # and rebuild the results. This ensures partial data is not lost.
+                # P1-Redesign (2026-06-18): read ALL per-product checkpoint files (pattern
+                # /tmp/collector_ckpt_{run_id}_*.json), not just the legacy single-file path.
                 if not sources:
                     from pathlib import Path
-                    ckpt_path = Path(f"/tmp/collector_ckpt_{run_id}.json")
-                    if ckpt_path.exists():
+                    ckpt_dir = Path("/tmp")
+                    # Prefer the new glob pattern; fall back to legacy single file for
+                    # backward compatibility with older runs.
+                    ckpt_paths = sorted(ckpt_dir.glob(f"collector_ckpt_{run_id}_*.json"))
+                    legacy_ckpt = ckpt_dir / f"collector_ckpt_{run_id}.json"
+                    if legacy_ckpt.exists() and not ckpt_paths:
+                        ckpt_paths = [legacy_ckpt]
+                    if ckpt_paths:
                         try:
                             import json as _json
-                            ckpt_data = _json.loads(ckpt_path.read_text())
-                            ckpt_results = ckpt_data.get("results", [])
-                            _collect_logger.warning(
-                                "collect_sources: collected 0 from agent result, but checkpoint has %d results. "
-                                "Rebuilding sources from checkpoint.",
-                                len(ckpt_results),
-                            )
-                            # Rebuild source objects from raw result data
                             from datetime import datetime, timezone
                             now_str = datetime.now(timezone.utc).isoformat()
-                            for res in ckpt_results:
-                                task = res.get("_task", {})
-                                url = task.get("url", "")
-                                product_id = task.get("product_id", "")
-                                source_id = task.get("source_id", "")
-                                snapshot_id = task.get("snapshot_id", "")
-                                error_msg = res.get("error_message")
-                                status_code = res.get("status_code", 0)
-                                raw_text = res.get("raw_text", "") or ""
-                                raw_html = res.get("raw_html", "") or ""
-                                title = res.get("title", "") or task.get("product_name", "")
-                                domain = res.get("domain", "")
-                                content_hash = res.get("content_hash", "")
-                                fetched_at = res.get("fetched_at", now_str)
-                                source_type = task.get("source_type", "official_site")
+                            rebuilt_total = 0
+                            for ckpt_path in ckpt_paths:
+                                ckpt_data = _json.loads(ckpt_path.read_text())
+                                ckpt_results = ckpt_data.get("results", [])
+                                _collect_logger.warning(
+                                    "collect_sources: checkpoint %s has %d results, rebuilding.",
+                                    ckpt_path.name, len(ckpt_results),
+                                )
+                                for res in ckpt_results:
+                                    task = res.get("_task", {})
+                                    url = task.get("url", "")
+                                    product_id = task.get("product_id", "")
+                                    source_id = task.get("source_id", "")
+                                    snapshot_id = task.get("snapshot_id", "")
+                                    error_msg = res.get("error_message")
+                                    status_code = res.get("status_code", 0)
+                                    raw_text = res.get("raw_text", "") or ""
+                                    raw_html = res.get("raw_html", "") or ""
+                                    title = res.get("title", "") or task.get("product_name", "")
+                                    domain = res.get("domain", "")
+                                    content_hash = res.get("content_hash", "")
+                                    fetched_at = res.get("fetched_at", now_str)
+                                    source_type = task.get("source_type", "official_site")
 
-                                # Build source record
-                                source_record = {
-                                    "run_id": run_id,
-                                    "source_id": source_id,
-                                    "product_id": product_id,
-                                    "url": url,
-                                    "source_type": source_type,
-                                    "fetch_level": task.get("fetch_level", 1),
-                                    "fetch_strategy": task.get("fetch_strategy", "requests"),
-                                    "collection_method": task.get("collection_method", "seed_url"),
-                                    "status": "collected" if not error_msg else "failed",
-                                    "char_count": len(raw_text),
-                                    "content": raw_text,
-                                    "raw_html": raw_html,
-                                    "content_hash": content_hash,
-                                    "title": title,
-                                    "domain": domain,
-                                    "error_message": error_msg,
-                                    "status_code": status_code,
-                                    "fetched_at": fetched_at,
-                                    "created_at": now_str,
-                                }
-                                sources.append(source_record)
-                                collection_stats["collected"] = collection_stats.get("collected", 0) + 1
-                                collection_stats["total_chars"] = collection_stats.get("total_chars", 0) + len(raw_text)
-
-                            ckpt_path.unlink(missing_ok=True)
+                                    # Build source record
+                                    source_record = {
+                                        "run_id": run_id,
+                                        "source_id": source_id,
+                                        "product_id": product_id,
+                                        "url": url,
+                                        "source_type": source_type,
+                                        "fetch_level": task.get("fetch_level", 1),
+                                        "fetch_strategy": task.get("fetch_strategy", "requests"),
+                                        "collection_method": task.get("collection_method", "seed_url"),
+                                        "status": "collected" if not error_msg else "failed",
+                                        "char_count": len(raw_text),
+                                        "content": raw_text,
+                                        "raw_html": raw_html,
+                                        "content_hash": content_hash,
+                                        "title": title,
+                                        "domain": domain,
+                                        "error_message": error_msg,
+                                        "status_code": status_code,
+                                        "fetched_at": fetched_at,
+                                        "created_at": now_str,
+                                    }
+                                    sources.append(source_record)
+                                    collection_stats["collected"] = collection_stats.get("collected", 0) + 1
+                                    collection_stats["total_chars"] = collection_stats.get("total_chars", 0) + len(raw_text)
+                                    rebuilt_total += 1
+                                ckpt_path.unlink(missing_ok=True)
                             _collect_logger.warning(
-                                "collect_sources: rebuilt %d sources from checkpoint.",
-                                len(sources),
+                                "collect_sources: rebuilt %d sources from %d checkpoint files.",
+                                rebuilt_total, len(ckpt_paths),
                             )
                         except Exception as exc:
                             _collect_logger.warning(
@@ -1987,7 +2418,13 @@ def collect_sources(state: WorkflowState) -> WorkflowState:
     state["sources"] = sources
     state["snapshots"] = snapshots
     state["raw_documents"] = raw_documents  # evidence_extraction reads from state["sources"]
-    state["evidence_items"] = []  # No longer set here — evidence_extraction node handles it
+    # In cached/replay mode, collect_sources loads evidence_items directly
+    # from DB. Preserve them so downstream nodes (analyze_dimensions etc.)
+    # can see the pre-extracted evidence without running evidence_extraction.
+    if mode in ("cached", "replay"):
+        state["evidence_items"] = evidence_items
+    else:
+        state["evidence_items"] = []  # No longer set here — evidence_extraction node handles it
     state["source_candidates"] = source_candidates
     state["discovery_results"] = discovery_results
     state["product_coverage"] = state.get("product_coverage", {})
@@ -2061,8 +2498,17 @@ def evidence_extraction(state: WorkflowState) -> WorkflowState:
             )
 
         # Write evidence to DB
+        # P1-Redesign (2026-06-18): tag each evidence row with the current rework
+        # iteration. Iteration 0 = initial collect; iteration > 0 = added by a
+        # true re-collect round triggered by the reviewer's feedback loop.
+        rework_iter = int(state.get("_rework_collect_count", 0) or 0)
+        rework_reason = state.get("rework_active_reason", "")
         for ev in evidence_items:
             try:
+                # Don't overwrite an existing attribution (execute_rework may set
+                # these fields when writing rework-added evidence directly).
+                ev.setdefault("rework_iteration", rework_iter)
+                ev.setdefault("rework_reason", rework_reason)
                 from backend.app.storage.repositories import EvidenceRepository
                 EvidenceRepository().add_evidence(ev)
             except Exception as exc:
@@ -2308,8 +2754,12 @@ def extract_facts(state: WorkflowState) -> WorkflowState:
                 # Write facts to DB
                 from backend.app.storage.fact_repository import FactRepository
                 repo = FactRepository()
+                # P1-Redesign (2026-06-18): same attribution as evidence_items.
+                rework_iter_f = int(state.get("_rework_collect_count", 0) or 0)
+                rework_reason_f = state.get("rework_active_reason", "")
                 for fact in facts:
                     try:
+                        fact.setdefault("rework_iteration", rework_iter_f)
                         repo.add_fact(fact)
                     except Exception as exc:
                         logger.error("Failed to write fact %s to DB: %s", fact.get("fact_id"), exc)
@@ -3001,6 +3451,23 @@ def execute_rework(state: WorkflowState) -> WorkflowState:
         run_id, len(schema_gaps), len(rework_requests), len(claim_drafts), len(signed_claims),
     )
 
+    # P1-Redesign (2026-06-18): Tag the rework reason in state so that any evidence
+    # collected during the upcoming re-collect round can be attributed back to
+    # this specific reason. Format: "DIM1,DIM2:short_reason".
+    reason_tags = []
+    for g in schema_gaps:
+        dim = g.get("dimension") or g.get("dim") or ""
+        if dim and len(reason_tags) < 3:
+            reason_tags.append(dim)
+    for rq in rework_requests[:3]:
+        dim = rq.get("dimension") or ""
+        if dim and len(reason_tags) < 3:
+            reason_tags.append(dim)
+    if reason_tags:
+        state["rework_active_reason"] = ";".join(reason_tags)[:200]
+    else:
+        state["rework_active_reason"] = "REVIEWER_REWORK"
+
     # Check if there are any gaps or requests to process
     priority_gaps = [g for g in schema_gaps if g.get("priority") in ("high", "medium")]
     has_work = priority_gaps or rework_requests
@@ -3071,95 +3538,152 @@ def execute_rework(state: WorkflowState) -> WorkflowState:
                 products_needing_search.append(pid)
 
     # If we have priority gaps and some products need evidence, perform multi-round search
+    # P1-Hotfix (2026-06-21): Wrapped in timeout to prevent workflow hanging.
+    # Both search_service init AND search_for_gaps calls can hang on network/provider issues.
+    # P0 (2026-06-22): Tuned timeouts for Doubao Thinking model (with reasoning tokens).
+    #   - Health probe: 50s→10s. A healthy provider responds in <2s; an unhealthy one
+    #     that needs 3×30s retries to fail will still fail within 10s.
+    #   - LLMInferenceProvider: Doubao Thinking model (ep-*) adds 5-25s of internal
+    #     reasoning before output, so 30s→45s to avoid premature timeout.
+    #   - _SEARCH_TIMEOUT: Doubao (4-6s) + LLMInference (up to 45s) = <60s, set to 90s.
+    _HEALTH_TIMEOUT = 10  # seconds for the health probe
+    _SEARCH_TIMEOUT = 90  # P1 (2026-06-22): 90s = Doubao (4-6s healthy) + LLMInference (up to 45s w/ Doubao Thinking) + overhead
+
+    def _run_search_with_timeout() -> dict[str, Any]:
+        """Inner function: runs search, returns result dict. Raises on failure."""
+        import concurrent.futures
+        from backend.app.services.multi_round_search_service import MultiRoundSearchService
+
+        _inner_logger = __import__("logging").getLogger(__name__)
+
+        def _init_and_search():
+            try:
+                svc = MultiRoundSearchService()
+                if svc.provider and svc.provider.is_configured:
+                    return svc.search_for_gaps(
+                        gaps=priority_gaps,
+                        existing_evidence=evidence_items,
+                        existing_sources=sources,
+                        run_id=run_id,
+                        product_slugs_needing_search=products_needing_search,
+                        llm_supplemental_queries=coverage_critic_result.get("supplemental_queries"),
+                    )
+                else:
+                    _inner_logger.warning(
+                        "execute_rework: MultiRoundSearchService provider not configured, skipping"
+                    )
+                    return {"new_evidence": [], "new_sources": [], "gaps_filled": [],
+                            "source_candidates": [], "queries_used": []}
+            except Exception as exc:
+                _inner_logger.error(
+                    "execute_rework: search_for_gaps raised: %s", exc, exc_info=True
+                )
+                return {"new_evidence": [], "new_sources": [], "gaps_filled": [],
+                        "source_candidates": [], "queries_used": []}
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+            future = executor.submit(_init_and_search)
+            try:
+                return future.result(timeout=_SEARCH_TIMEOUT)
+            except concurrent.futures.TimeoutError:
+                _inner_logger.warning(
+                    "execute_rework: search_for_gaps timed out after %ds", _SEARCH_TIMEOUT
+                )
+                return {"new_evidence": [], "new_sources": [], "gaps_filled": [],
+                        "source_candidates": [], "queries_used": []}
+            except Exception as exc:
+                _inner_logger.error("execute_rework: search failed: %s", exc, exc_info=True)
+                return {"new_evidence": [], "new_sources": [], "gaps_filled": [],
+                        "source_candidates": [], "queries_used": []}
+
     if priority_gaps and products_needing_search and mode == "real_time":
         logger.info(
             "execute_rework (P0.5): performing multi-round search for %d products with gaps",
             len(products_needing_search),
         )
+        search_result = _run_search_with_timeout()
 
+        # P0 (2026-06-22): Inspect the network health probe. If the
+        # overseas endpoints have all been failing, the search above
+        # likely produced very little. We mark the run as
+        # ``_network_degraded`` so downstream nodes (coverage_critic
+        # on subsequent rounds, report writer) know that the gaps are
+        # due to environmental conditions, not a schema planning bug.
         try:
-            from backend.app.services.multi_round_search_service import MultiRoundSearchService
-
-            search_service = MultiRoundSearchService()
-
-            if search_service.provider and search_service.provider.is_configured:
-                search_result = search_service.search_for_gaps(
-                    gaps=priority_gaps,
-                    existing_evidence=evidence_items,
-                    existing_sources=sources,
-                    run_id=run_id,
-                    product_slugs_needing_search=products_needing_search,
-                    # P1-B: Pass LLM-generated queries (from coverage_critic) as highest priority
-                    llm_supplemental_queries=coverage_critic_result.get("supplemental_queries"),
+            from backend.app.services.search_provider import get_network_health
+            health = get_network_health()
+            degraded_hosts = [h for h, s in health.items() if s.get("degraded")]
+            if degraded_hosts:
+                state["_network_degraded"] = True
+                state["_network_degraded_hosts"] = degraded_hosts
+                logger.warning(
+                    "execute_rework: network is degraded on hosts=%s. "
+                    "Marking evidence as sparse. Coverage gaps that remain "
+                    "are likely environmental, not schema bugs.",
+                    degraded_hosts,
                 )
+        except Exception as exc:
+            logger.debug("execute_rework: network health probe unavailable: %s", exc)
 
-                new_evidence = search_result.get("new_evidence", [])
-                new_sources = search_result.get("new_sources", [])
-                gaps_filled = search_result.get("gaps_filled", [])
-                queries_used = search_result.get("queries_used", [])
-                source_candidates = search_result.get("source_candidates", [])
+        new_evidence = search_result.get("new_evidence", [])
+        new_sources = search_result.get("new_sources", [])
+        gaps_filled = search_result.get("gaps_filled", [])
+        queries_used = search_result.get("queries_used", [])
+        source_candidates = search_result.get("source_candidates", [])
 
-                logger.info(
-                    "execute_rework (P0.5): search completed - new_evidence=%d new_sources=%d "
-                    "gaps_filled=%d queries_used=%d source_candidates=%d",
-                    len(new_evidence), len(new_sources), len(gaps_filled), len(queries_used),
-                    len(source_candidates),
-                )
+        logger.info(
+            "execute_rework (P0.5): search completed - new_evidence=%d new_sources=%d "
+            "gaps_filled=%d queries_used=%d source_candidates=%d",
+            len(new_evidence), len(new_sources), len(gaps_filled), len(queries_used),
+            len(source_candidates),
+        )
 
-                # P1-1: Fetch URLs from source_candidates to extract high-quality evidence
-                # This is the key fix: we now actually fetch the snippet_only URLs
-                if source_candidates:
-                    try:
-                        fetched_evidence = search_service.fetch_source_candidates(
+        # P1-1: Fetch URLs from source_candidates to extract high-quality evidence
+        if source_candidates:
+            try:
+                from backend.app.services.multi_round_search_service import MultiRoundSearchService
+                svc = MultiRoundSearchService()
+                if svc.provider and svc.provider.is_configured:
+                    def _fetch():
+                        return svc.fetch_source_candidates(
                             source_candidates=source_candidates,
                             run_id=run_id,
                             max_concurrent=3,
                             max_per_product=10,
                         )
-                        
-                        if fetched_evidence:
-                            logger.info(
-                                "execute_rework (P1-1): extracted %d high-quality evidence from URL fetch",
-                                len(fetched_evidence)
-                            )
-                            # Add fetched evidence to the pool
-                            existing_evidence_ids = {e.get("evidence_id") for e in evidence_items}
-                            for ev in fetched_evidence:
-                                if ev.get("evidence_id") not in existing_evidence_ids:
-                                    evidence_items.append(ev)
-                                    existing_evidence_ids.add(ev.get("evidence_id"))
-                            state["evidence_items"] = evidence_items
-                            
-                            # Persist fetched evidence to DB
-                            persisted_count = 0
-                            failed_count = 0
-                            if mode == "real_time":
-                                try:
-                                    from backend.app.storage.repositories import EvidenceRepository
-                                    ev_repo = EvidenceRepository()
-                                    for ev in fetched_evidence:
-                                        try:
-                                            ev_repo.add_evidence(ev)
-                                            persisted_count += 1
-                                        except Exception as exc:
-                                            failed_count += 1
-                                            logger.warning(
-                                                "execute_rework (P1-1): failed to persist fetched evidence %s: %s",
-                                                ev.get("evidence_id"), exc
-                                            )
-                                    logger.info(
-                                        "execute_rework (P1-1): persisted %d/%d fetched evidence to DB (failed=%d)",
-                                        persisted_count, len(fetched_evidence), failed_count
-                                    )
-                                except Exception as exc:
-                                    logger.warning(
-                                        "execute_rework (P1-1): EvidenceRepository not available: %s", exc
-                                    )
+                    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as ex:
+                        fet = ex.submit(_fetch)
+                        try:
+                            fetched_evidence = fet.result(timeout=30)
+                        except Exception:
+                            fetched_evidence = []
+                else:
+                    fetched_evidence = []
+            except Exception:
+                fetched_evidence = []
+
+            if fetched_evidence:
+                logger.info(
+                    "execute_rework (P1-1): extracted %d high-quality evidence from URL fetch",
+                    len(fetched_evidence)
+                )
+                existing_evidence_ids = {e.get("evidence_id") for e in evidence_items}
+                for ev in fetched_evidence:
+                    if ev.get("evidence_id") not in existing_evidence_ids:
+                        evidence_items.append(ev)
+                        existing_evidence_ids.add(ev.get("evidence_id"))
+                state["evidence_items"] = evidence_items
+                if mode == "real_time":
+                    try:
+                        from backend.app.storage.repositories import EvidenceRepository
+                        ev_repo = EvidenceRepository()
+                        for ev in fetched_evidence:
+                            try:
+                                ev_repo.add_evidence(ev)
+                            except Exception as exc:
+                                logger.warning("execute_rework (P1-1): persist failed: %s", exc)
                     except Exception as exc:
-                        logger.warning(
-                            "execute_rework (P1-1): URL fetch failed: %s",
-                            exc,
-                        )
+                        logger.warning("execute_rework (P1-1): EvidenceRepository not available: %s", exc)
 
                 # Add new evidence to state
                 # P0-1 Fix: Only add non-snippet_only evidence to evidence_items
@@ -3280,22 +3804,6 @@ def execute_rework(state: WorkflowState) -> WorkflowState:
                             logger.warning(
                                 "execute_rework: EvidenceRepository not available: %s", exc
                             )
-
-            else:
-                logger.warning(
-                    "execute_rework (P0.5): search provider not configured, skipping multi-round search"
-                )
-
-        except Exception as exc:
-            logger.error(
-                "execute_rework (P0.5): multi-round search failed: %s",
-                exc,
-            )
-            state.setdefault("errors", []).append({
-                "reason_code": "MULTI_ROUND_SEARCH_FAILED",
-                "message": str(exc),
-                "node": "execute_rework",
-            })
 
     try:
         from backend.app.services.rework_service import create_rework_tasks
@@ -3752,6 +4260,7 @@ def prepare_human_intervention(state: WorkflowState) -> WorkflowState:
     return state
 
 
+
 def analyze_dimensions(state: WorkflowState) -> WorkflowState:
     run_id = state.get("run_id", "unknown")
     evidence_items = state.get("evidence_items", [])
@@ -3967,14 +4476,15 @@ def review_claims(state: WorkflowState) -> WorkflowState:
         except Exception as exc:
             logger.warning("review_claims: failed to persist gated usable_for_claim to DB: %s", exc)
 
-        # P0-1 Fix: Build filtered evidence set containing only usable evidence.
-        # This ensures the reviewer makes decisions based only on usable evidence,
-        # and the resulting signed_claim.evidence_ids only references usable items.
-        usable_evidence = [
-            ev for ev in evidence_items
-            if ev.get("usable_for_claim", False)
-        ]
-        usable_evidence_map = {ev.get("evidence_id"): ev for ev in usable_evidence if ev.get("evidence_id")}
+        # P0-1 Fix: Build filtered evidence set for PERSISTING usable_for_claim to DB only.
+        # The reviewer MUST see ALL evidence (not gate-filtered) to make informed decisions.
+        # The gate's usable_for_claim is a quality signal, not a claim-signing gate.
+        # Previously, when all evidence was marked unusable (dimension mismatch between
+        # claim.dimension="功能" and evidence.schema_key="user_persona"), the reviewer
+        # received an empty evidence list and all 13 claims were auto-downgraded to
+        # rework_required, leaving the report with 0 signed claims.
+        # Now: pass all evidence to reviewer, update usable_for_claim in DB separately.
+        usable_evidence_map = {ev.get("evidence_id"): ev for ev in evidence_items if ev.get("evidence_id")}
 
         agent = _reviewer()
         signed = []
@@ -3989,7 +4499,8 @@ def review_claims(state: WorkflowState) -> WorkflowState:
             # Step 1: strip stale evidence (no longer in evidence_index)
             missing_evidence_ids = [eid for eid in claim_evidence_ids if eid not in evidence_index]
 
-            # Step 2: keep only usable evidence in the claim's evidence_ids
+            # Step 2: keep only gate-passed evidence in the claim's evidence_ids
+            # This preserves the gate's quality signal but does NOT block the reviewer.
             usable_claim_evidence_ids = [
                 eid for eid in claim_evidence_ids
                 if eid in evidence_index and eid in usable_evidence_map
@@ -4000,51 +4511,27 @@ def review_claims(state: WorkflowState) -> WorkflowState:
                 claim["stale_evidence_ids"] = missing_evidence_ids
             claim["evidence_ids"] = usable_claim_evidence_ids
 
-            # Step-5 Fix: Evidence Sufficiency Sprint
-            # Hard gate: if claim has no usable evidence after filtering,
-            # downgrade to rework_required immediately without calling LLM reviewer.
-            # This ensures signed claims always have at least 1 usable evidence backbone.
-            if not usable_claim_evidence_ids:
+            # Step-5 Fix (P0 2026-06-22): Pass ALL evidence to reviewer for evaluation.
+            # The gate's usable_for_claim is a quality signal, NOT a claim-signing gate.
+            # Reviewer has the expertise to evaluate claim+evidence quality independently.
+            if not usable_claim_evidence_ids and not claim_evidence_ids:
+                # Case 3: claim has no evidence at all — give reviewer all evidence for context
                 logger.warning(
-                    "review_claims: claim_id=%s has no usable evidence after filtering "
-                    "(%d stale), immediately downgraded to rework_required",
+                    "review_claims: claim_id=%s has no evidence at all. "
+                    "Passing all %d evidence items for reviewer context.",
                     claim.get("claim_id", ""),
-                    len(missing_evidence_ids),
+                    len(evidence_index),
                 )
-                claim["review_status"] = "rework_required"
-                claim["_hard_gate_downgrade"] = True
-                review_id = f"review_{claim.get('claim_id', 'unknown')}_{uuid.uuid4().hex[:8]}"
-                reviews.append({
-                    "review_id": review_id,
-                    "claim_id": claim.get("claim_id", ""),
-                    "review_target_type": "claim",
-                    "review_target_id": claim.get("claim_id", ""),
-                    "status": "rework_required",
-                    "review_status": "rework_required",
-                    "reason": "no_usable_evidence",
-                    "reason_codes": ["NO_USABLE_EVIDENCE"],
-                    "checks": [],
-                    "reviewed_at": now,
-                    "created_at": now,
-                    "reviewer_agent": "ReviewerAgent",
-                })
-                # Build minimal rework_request
-                rework_reqs.append({
-                    "rework_id": f"rw_{uuid.uuid4().hex[:12]}",
-                    "review_id": review_id,
-                    "target_agent": "EvidenceExtractor",
-                    "target_node": "collect_sources",
-                    "affected_objects": [{"claim_id": claim.get("claim_id"), "product_id": claim.get("product_id")}],
-                    "reason_codes": ["NO_USABLE_EVIDENCE"],
-                    "required_actions": [f"Collect usable evidence for claim {claim.get('claim_id')}"],
-                    "success_criteria": {"min_evidence_count": 1},
-                    "status": "pending",
-                    "created_at": now,
-                })
-                updated_claims.append(claim)
-                continue  # Skip LLM review for this claim
+                all_claim_evidence = list(evidence_index.values())[:20]
+            else:
+                # Case 1+2: use the claim's own evidence_ids (gate-filtered or original)
+                # This gives the reviewer exactly the evidence the claim's analyst linked
+                all_claim_evidence = [
+                    usable_evidence_map.get(eid, {}) for eid in claim_evidence_ids
+                    if eid in usable_evidence_map
+                ]
 
-            result = agent.review_claim(claim, usable_evidence)
+            result = agent.review_claim(claim, all_claim_evidence)
             reviews.append(result)
             status = result.get("status", "")
             if status == "rework_required":
@@ -4071,6 +4558,16 @@ def review_claims(state: WorkflowState) -> WorkflowState:
             # Step-3 Fix: collect updated claim (with filtered evidence_ids) to write back to state
             updated_claims.append(claim)
 
+            # P0-Fix: Update claim["review_status"] so updated_claims reflects the reviewer's decision.
+            # Previously, only claim_to_save["review_status"] was set (for DB persistence), leaving
+            # claim["review_status"] unchanged (original DB value, e.g. "rework_required"), causing
+            # rework_required_claims to incorrectly include ALL claims regardless of review outcome.
+            claim["review_status"] = (
+                "signed" if status in ("pass", "warning") else
+                "rework_required" if status == "rework_required" else
+                "pending"
+            )
+
             # Persist claim to DB (always, not just real_time)
             if mode in ("real_time", "replay"):
                 try:
@@ -4078,6 +4575,7 @@ def review_claims(state: WorkflowState) -> WorkflowState:
                     repo = ClaimRepository()
                     # Ensure fact_ids and evidence_ids are lists
                     claim_to_save = dict(claim)
+                    claim_to_save["run_id"] = run_id  # Required field for DB persistence
                     claim_to_save["review_status"] = (
                         "signed" if status in ("pass", "warning") else
                         "rework_required" if status == "rework_required" else
@@ -4611,14 +5109,50 @@ def write_report_v2(state: WorkflowState) -> WorkflowState:
     
     This workflow is triggered when state['report_version'] == 'v2'.
     """
-    from backend.app.services.deep_report import run_deep_report_workflow
+    import logging as _logger
+    from backend.app.services.deep_report import run_deep_report_workflow, _generate_fixed_prompt_report
     from backend.app.services.domain_schema import understand_query, generate_domain_schema
     
     run_id = state.get("run_id", "unknown")
-    signed_claims = state.get("signed_claims", [])
+    # P1-Fix: In real_time mode, evidence may have been updated by execute_rework
+    # but workflow_state doesn't reflect DB changes. Always reload from DB to ensure
+    # write_report_v2 has the latest evidence (including all 4 products after rework).
+    # P1-Fix: Always reload from DB for evidence and claims — the DB is the source of truth.
+    # Previously, only real_time mode reloaded from DB. In replay mode, the function read
+    # from state, which may contain stale workflow_state_json (e.g., signed_claims=0 from
+    # before review_claims ran). Evidence/claims are now always persisted to DB, so DB
+    # always has the freshest data regardless of workflow state file.
+    mode = state.get("mode", "real_time")
+    _db_evidence = _db_query(
+        "SELECT * FROM evidence_items WHERE run_id = ? ORDER BY product_id, created_at",
+        (run_id,),
+    )
+    _db_signed_claims = _db_query(
+        "SELECT * FROM claims WHERE run_id = ? AND review_status = 'signed'",
+        (run_id,),
+    )
+    _db_analyst_claims = _db_query(
+        "SELECT * FROM claims WHERE run_id = ? AND review_status = 'analyst_signed'",
+        (run_id,),
+    )
+    if _db_evidence:
+        evidence_items = _db_evidence
+        signed_claims = _db_signed_claims + _db_analyst_claims
+        facts = _db_query("SELECT * FROM facts WHERE run_id = ?", (run_id,))
+        if mode == "real_time" or signed_claims:
+            logger.info(
+                "write_report_v2: reloaded %d evidence_items, %d signed_claims from DB "
+                "(mode=%s, state had evidence=%d claims=%d)",
+                len(_db_evidence), len(signed_claims), mode,
+                len(state.get("evidence_items", [])), len(state.get("signed_claims", [])),
+            )
+    else:
+        # Fallback: use state (e.g., if evidence extraction produced no items)
+        evidence_items = state.get("evidence_items", [])
+        all_db_claims = _db_signed_claims + _db_analyst_claims
+        signed_claims = all_db_claims if all_db_claims else state.get("signed_claims", [])
+        facts = state.get("facts", [])
     rework_required_claims = state.get("rework_required_claims", [])
-    facts = state.get("facts", [])
-    evidence_items = state.get("evidence_items", [])
     task_brief = state.get("task_brief", {})
     user_query = task_brief.get("query", task_brief.get("task_description", ""))
 
@@ -4716,28 +5250,104 @@ def write_report_v2(state: WorkflowState) -> WorkflowState:
                 if name:
                     product_id_to_name[name] = name
 
-        # Call the deep report workflow with domain schema for generalized support
-        result = run_deep_report_workflow(
-            run_id=run_id,
-            report_id=f"report_{run_id}_v2",
-            products=products,
-            signed_claims=reviewer_signed,
-            analyst_signed_claims=analyst_signed,
-            rework_required_claims=rework_required_claims,
-            facts=facts,
-            evidence_items=evidence_items,
-            research_plan=task_brief.get("research_plan"),
-            schema_type=task_brief.get("schema_type"),
-            domain_schema=domain_schema,
-            query_understanding=query_understanding,
-            product_id_to_name=product_id_to_name,
+        # ── P1 (2026-06-22): Hybrid flow — normal pipeline with timeout + fallback ──────────
+        # run_deep_report_workflow uses parallel section processing and can take 600-2400s.
+        # Wrap in ThreadPoolExecutor so we can apply a hard outer timeout.
+        # If it times out or raises, fall back to _generate_fixed_prompt_report (single LLM call, ~60s).
+        _NORMAL_TIMEOUT = 2400  # 40 min — normal pipeline with Doubao search takes up to 30min
+
+        def _call_normal_workflow() -> dict[str, Any]:
+            from backend.app.services.deep_report import run_deep_report_workflow
+            # Fix 2: Extract confirmed outline from research_plan and write to state.
+            # This bridges the outline confirmation flow: generate-outline → confirm → state
+            # → write_report_v2 reads it and passes to run_deep_report_workflow.
+            rp = task_brief.get("research_plan", {}) or {}
+            confirmed_outline = rp.get("report_outline")
+            if confirmed_outline and isinstance(confirmed_outline, dict):
+                sections = confirmed_outline.get("sections", [])
+                if sections:
+                    state["final_report_outline"] = sections
+            elif confirmed_outline and isinstance(confirmed_outline, list):
+                state["final_report_outline"] = confirmed_outline
+
+            return run_deep_report_workflow(
+                run_id=run_id,
+                report_id=f"report_{run_id}_v2",
+                products=products,
+                signed_claims=reviewer_signed,
+                analyst_signed_claims=analyst_signed,
+                rework_required_claims=rework_required_claims,
+                facts=facts,
+                evidence_items=evidence_items,
+                research_plan=task_brief.get("research_plan"),
+                schema_type=task_brief.get("schema_type"),
+                domain_schema=domain_schema,
+                query_understanding=query_understanding,
+                product_id_to_name=product_id_to_name,
+                preconfirmed_outline=state.get("final_report_outline"),
+            )
+
+        _logger.warning(
+            "write_report_v2 (P1 2026-06-22): running hybrid flow — "
+            "normal pipeline (timeout=%ds) then fixed-prompt fallback. "
+            "products=%s, evidence=%d, signed_claims=%d",
+            _NORMAL_TIMEOUT, products, len(evidence_items), len(reviewer_signed) + len(analyst_signed),
         )
+
+        import concurrent.futures as _futures
+        with _futures.ThreadPoolExecutor(max_workers=1) as _ex:
+            _fut = _ex.submit(_call_normal_workflow)
+            try:
+                result = _fut.result(timeout=_NORMAL_TIMEOUT)
+                _logger.info("write_report_v2: normal pipeline completed in %.0fs for run_id=%s",
+                            _NORMAL_TIMEOUT, run_id)
+            except _futures.TimeoutError:
+                _logger.warning(
+                    "write_report_v2: normal pipeline timed out after %ds for run_id=%s. "
+                    "Falling back to fixed-prompt report.",
+                    _NORMAL_TIMEOUT, run_id,
+                )
+                result = _generate_fixed_prompt_report(
+                    run_id=run_id,
+                    report_id=f"report_{run_id}_v2",
+                    products=products,
+                    task_brief=task_brief,
+                    signed_claims=reviewer_signed + analyst_signed,
+                    evidence_items=evidence_items,
+                    product_id_to_name=product_id_to_name,
+                )
+            except Exception as _exc:
+                _logger.error(
+                    "write_report_v2: normal pipeline raised %s for run_id=%s. "
+                    "Falling back to fixed-prompt report.",
+                    _exc, run_id, exc_info=True,
+                )
+                result = _generate_fixed_prompt_report(
+                    run_id=run_id,
+                    report_id=f"report_{run_id}_v2",
+                    products=products,
+                    task_brief=task_brief,
+                    signed_claims=reviewer_signed + analyst_signed,
+                    evidence_items=evidence_items,
+                    product_id_to_name=product_id_to_name,
+                )
         
         state["report_draft"] = result
         # Ensure report_version is set in state so export_report knows to skip v1 generation
         state["report_version"] = "v2"
         logger.info("write_report_v2: report generated for run_id=%s", run_id)
-        
+
+        # Fix 4: Always save workflow state after write_report_v2 completes so that
+        # export_report (which reads from DB) sees report_version="v2" and skips v1 path.
+        # Previously state was only saved on pause, causing export_report to fall through
+        # to generic v1 section generation even when v2 sections existed on disk.
+        try:
+            from backend.app.storage.repositories import RunRepository
+            RunRepository().save_workflow_state(run_id, state)
+            logger.info("write_report_v2: workflow state saved for run_id=%s", run_id)
+        except Exception as exc:
+            logger.warning("write_report_v2: failed to save workflow state: %s", exc)
+
     except Exception as exc:
         logger.error("write_report_v2 failed for run_id=%s: %s", run_id, exc, exc_info=True)
         import traceback as _tb
@@ -5658,9 +6268,33 @@ def compute_metrics(state: WorkflowState) -> WorkflowState:
     rework_succeeded = sum(1 for r in rework_requests if r.get("status") == "succeeded")
     rework_success_rate = rework_succeeded / len(rework_requests) if rework_requests else 1.0
 
-    # Use real schema_completion_rate from schema_coverage (computed by detect_schema_gaps)
-    # Falls back to review_pass_rate if schema_coverage is not available
-    schema_completion_rate = schema_coverage.get("schema_completion_rate", review_pass_rate)
+    # Use real schema_completion_rate from SchemaGapPlanner shared method
+    # (the detect_schema_gaps path via schema_coverage may return 0.0 due to key
+    #  naming mismatch; use DB evidence count directly for authoritative value)
+    run_id = state.get("run_id", "")
+    if state.get("mode") == "real_time":
+        from backend.app.storage.db import get_connection
+        from backend.app.services.schema_gap_planner import SchemaGapPlanner
+        try:
+            with get_connection() as conn:
+                usable_count = conn.execute(
+                    "SELECT COUNT(*) FROM evidence_items WHERE run_id = ? AND usable_for_claim = 1",
+                    (run_id,),
+                ).fetchone()[0]
+            products = state.get("task_brief", {}).get("products", []) or []
+            planner = SchemaGapPlanner()
+            schema_completion_rate = planner.compute_schema_completion_rate(
+                usable_count, len(products)
+            )
+            logger.info(
+                "compute_metrics: schema_completion_rate=%.3f (%d usable ev / %d products)",
+                schema_completion_rate, usable_count, len(products),
+            )
+        except Exception as exc:
+            logger.warning("compute_metrics: could not compute schema_completion_rate: %s", exc)
+            schema_completion_rate = schema_coverage.get("schema_completion_rate", review_pass_rate)
+    else:
+        schema_completion_rate = schema_coverage.get("schema_completion_rate", review_pass_rate)
 
     # Build schema_gap_examples: top 10 high/medium priority gaps
     schema_gap_examples: list[dict[str, Any]] = []
@@ -5755,6 +6389,22 @@ def compute_metrics(state: WorkflowState) -> WorkflowState:
     rework_failed_count = sum(1 for t in rework_tasks if t.get("status") == "failed")
     rework_skipped_count = sum(1 for t in rework_tasks if t.get("status") in ("skipped", "closed"))
 
+    # P1-Redesign (2026-06-18): evidence attribution stats by rework iteration.
+    # Iteration 0 = initial collect; iteration 1+ = added by true re-collect.
+    evidence_by_iter: dict[int, int] = {}
+    facts_by_iter: dict[int, int] = {}
+    for ev in evidence_items:
+        ri = int(ev.get("rework_iteration", 0) or 0)
+        evidence_by_iter[ri] = evidence_by_iter.get(ri, 0) + 1
+    facts_list = state.get("facts", []) or []
+    for f in facts_list:
+        ri = int(f.get("rework_iteration", 0) or 0)
+        facts_by_iter[ri] = facts_by_iter.get(ri, 0) + 1
+    rework_collect_triggered = int(state.get("_rework_collect_count", 0) or 0)
+    # Evidence/facts added by rework rounds (iteration > 0)
+    evidence_added_by_rework = sum(c for k, c in evidence_by_iter.items() if k > 0)
+    facts_added_by_rework = sum(c for k, c in facts_by_iter.items() if k > 0)
+
     state["metrics"] = {
         "schema_completion_rate": schema_completion_rate,
         "evidence_coverage_rate": evidence_coverage_rate,
@@ -5783,6 +6433,13 @@ def compute_metrics(state: WorkflowState) -> WorkflowState:
         "rework_after_metrics": rework_after_metrics,
         "rework_before_after": rework_before_after,
         "rework_task_examples": rework_task_examples,
+        # P1-Redesign (2026-06-18): True feedback loop attribution metrics.
+        "rework_collect_triggered_count": rework_collect_triggered,
+        "evidence_added_by_rework_count": evidence_added_by_rework,
+        "facts_added_by_rework_count": facts_added_by_rework,
+        "evidence_by_rework_iteration": evidence_by_iter,
+        "facts_by_rework_iteration": facts_by_iter,
+        "rework_active_reason": state.get("rework_active_reason", ""),
     }
 
     # Persist eval log to DB (real_time mode)
