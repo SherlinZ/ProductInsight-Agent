@@ -1,0 +1,68 @@
+#!/bin/bash
+# 启动 ProductInsight Agent 前后端
+# 用法: ./run.sh [frontend|backend|all]
+# 示例: ./run.sh all
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+cd "$SCRIPT_DIR"
+
+MODE="${1:-all}"
+
+echo "=== ProductInsight Agent 启动脚本 ==="
+echo "项目目录: $SCRIPT_DIR"
+
+# 检查依赖
+if ! python3 -c "import streamlit" 2>/dev/null; then
+    echo "[错误] 缺少依赖，请先运行: pip install -r requirements.txt"
+    exit 1
+fi
+
+start_backend() {
+    echo "[后端] 启动 uvicorn (端口 8005)..."
+    nohup uvicorn backend.app.main:app --reload --port 8005 --host 0.0.0.0 > /tmp/backend.log 2>&1 & disown
+    sleep 2
+    if curl -s http://localhost:8005/health > /dev/null 2>&1; then
+        echo "[后端] ✅ 已启动 (http://localhost:8005)"
+    else
+        echo "[后端] ⚠️  启动中，请稍后访问 /tmp/backend.log 查看日志"
+    fi
+}
+
+start_frontend() {
+    echo "[前端] 启动 Streamlit (端口 8505)..."
+    # 关键: PYTHONPATH 必须设为项目根目录，这样 "from frontend.common" 才能找到
+    PYTHONPATH="$SCRIPT_DIR" streamlit run frontend/app.py \
+        --server.port 8505 \
+        --server.address 0.0.0.0 \
+        --server.headless true \
+        > /tmp/frontend.log 2>&1 &
+    FRONTEND_PID=$!
+    sleep 3
+    if curl -s http://localhost:8505 > /dev/null 2>&1; then
+        echo "[前端] ✅ 已启动 (http://localhost:8505)"
+    else
+        echo "[前端] ⚠️  启动中，请稍后访问 http://localhost:8505"
+    fi
+}
+
+case "$MODE" in
+    backend)
+        start_backend
+        ;;
+    frontend)
+        start_frontend
+        ;;
+    all|"")
+        start_backend
+        start_frontend
+        echo ""
+        echo "=== 启动完成 ==="
+        echo "前端: http://localhost:8505"
+        echo "后端: http://localhost:8005"
+        echo "后端日志: /tmp/backend.log"
+        echo "前端日志: /tmp/frontend.log"
+        ;;
+    *)
+        echo "用法: $0 [frontend|backend|all]"
+        ;;
+esac
