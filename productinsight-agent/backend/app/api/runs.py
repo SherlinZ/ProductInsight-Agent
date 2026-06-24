@@ -2,11 +2,12 @@ from __future__ import annotations
 
 import atexit
 import concurrent.futures
+import logging
 import threading
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Any
 from fastapi import APIRouter, HTTPException, BackgroundTasks, Query
 from pydantic import BaseModel
 
@@ -184,7 +185,9 @@ def get_run(run_id: str) -> dict:
     run = RunRepository().get_run(run_id)
     if not run:
         raise HTTPException(status_code=404, detail="Run not found")
-    return run
+    # Enrich with live report availability (disk is source of truth)
+    report_meta = _report_available_for_run(run_id)
+    return {**run, **report_meta}
 
 
 @router.post("/{run_id}/start")
@@ -459,7 +462,8 @@ def _run_pending_nodes_sync(run_id: str, pending_names: list[str], state: dict) 
         if not fn:
             continue
         start = _time_mod.perf_counter()
-        wf_repo.start_node(run_id, node_name, {})
+        input_summary = _summarize_state(state)
+        wf_repo.start_node(run_id, node_name, input_summary)
         try:
             state = fn(state)
         except Exception as exc:
@@ -860,7 +864,7 @@ def get_run_report_draft(run_id: str) -> dict[str, Any]:
                 "run_id": run_id,
                 "report_outline": {},
                 "section_statuses": [],
-                "sections": [],
+                "sections": v2_data.get("sections", []),
                 "spans": [],
                 "content_markdown": md_content,
                 "content_html": html_content,
