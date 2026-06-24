@@ -128,6 +128,9 @@ def render_research_plan_page(run_id: str = None):
         ("rp_outline_sections", []),
         ("rp_outline_title", ""),
         ("rp_outline_generating", False),
+        # New: analysis preview state
+        ("rp_analysis_data", None),       # holds the /analyze result
+        ("rp_analysis_done", False),       # True after user clicks "confirm preview"
     ]:
         if key not in st.session_state:
             st.session_state[key] = default
@@ -185,11 +188,27 @@ def render_research_plan_page(run_id: str = None):
             st.markdown("")
             if st.button("加载" if is_chinese else "Load", use_container_width=True) and sel_label:
                 if load_plan(sel_label):
+                    loaded_plan = st.session_state["rp_plan_data"]
                     st.session_state["rp_comps_edited"] = False
                     st.session_state["rp_dims_edited"] = False
                     st.session_state["rp_outline_edited"] = False
-                    st.session_state["rp_outline_sections"] = st.session_state["rp_plan_data"].get("report_outline", {}).get("sections") or []
-                    st.session_state["rp_outline_title"] = st.session_state["rp_plan_data"].get("report_outline", {}).get("report_title") or ""
+                    st.session_state["rp_analysis_data"] = None
+                    st.session_state["rp_analysis_done"] = False
+                    st.session_state["rp_analysis_loading"] = False
+                    # Sync competitors: convert old schema to new in-memory format
+                    _comps = []
+                    for c in (loaded_plan.get("competitors") or []):
+                        new_c = dict(c)
+                        if "url" not in new_c and "seed_urls" in new_c:
+                            new_c["url"] = ""
+                        if "notes" not in new_c:
+                            new_c["notes"] = ""
+                        if "company_name" not in new_c:
+                            new_c["company_name"] = c.get("company") or ""
+                        _comps.append(new_c)
+                    st.session_state["rp_comps_list"] = _comps
+                    st.session_state["rp_outline_sections"] = (loaded_plan.get("report_outline") or {}).get("sections") or []
+                    st.session_state["rp_outline_title"] = (loaded_plan.get("report_outline") or {}).get("report_title") or ""
                     st.rerun()
                 else:
                     st.error("加载失败" if is_chinese else "Load failed")
@@ -198,7 +217,7 @@ def render_research_plan_page(run_id: str = None):
     st.divider()
 
     # ════════════════════════════════════════════════════════════════════════
-    # NO PLAN LOADED — Generate new plan
+    # NO PLAN LOADED — New Plan Flow (2 steps: Analyze → Confirm & Generate)
     # ════════════════════════════════════════════════════════════════════════
     if not plan_data:
         with st.expander("🆕 生成新调研方案" if is_chinese else "🆕 Generate New Research Plan", expanded=True):
@@ -233,34 +252,184 @@ def render_research_plan_page(run_id: str = None):
                     "模式" if is_chinese else "Mode",
                     options=mode_opts, index=0,
                 )
-            if st.button("生成调研方案" if is_chinese else "Generate Plan",
-                         type="primary", use_container_width=True):
-                if not user_query.strip():
-                    st.error("请输入研究需求。" if is_chinese else "Enter a research query.")
-                else:
-                    with st.spinner("正在生成..." if is_chinese else "Generating..."):
+
+            # ── Step 1: Analyze ───────────────────────────────────────────────
+            if not st.session_state.get("rp_analysis_done"):
+                if st.button(
+                    "🔍 " + ("智能分析需求" if is_chinese else "Analyze Query (AI)"),
+                    type="primary", use_container_width=True,
+                ):
+                    if not user_query.strip():
+                        st.error("请输入研究需求。" if is_chinese else "Enter a research query.")
+                    else:
+                        st.session_state["rp_analysis_loading"] = True
+                        st.rerun()
+
+                if st.session_state.get("rp_analysis_loading"):
+                    with st.spinner(
+                        "🔍 " + ("正在智能分析，请稍候..." if is_chinese else "Analyzing query with AI...")
+                    ):
                         try:
                             resp = requests.post(
-                                f"{API_BASE}/api/research-plans/generate",
-                                json={"user_query": user_query, "schema_type": schema_type,
-                                      "target_region": target_region, "mode": mode},
-                                timeout=60,
+                                f"{API_BASE}/api/research-plans/analyze",
+                                json={"user_query": user_query, "target_region": target_region},
+                                timeout=120,
                             )
                             if resp.status_code >= 400:
-                                st.error(f"生成失败: {resp.text}")
+                                st.error(f"分析失败: {resp.text}")
+                                st.session_state["rp_analysis_loading"] = False
                             else:
                                 result = resp.json()
-                                st.session_state["rp_plan_id"] = result.get("research_plan_id")
-                                st.session_state["rp_plan_data"] = result.get("research_plan")
-                                st.session_state["rp_comps_edited"] = False
-                                st.session_state["rp_dims_edited"] = False
-                                st.session_state["rp_outline_edited"] = False
-                                st.session_state["rp_outline_sections"] = []
-                                st.session_state["rp_outline_title"] = ""
-                                st.success(f"方案已生成！来源: {result.get('generated_by', 'unknown')}")
+                                analysis = result.get("analysis", {})
+                                st.session_state["rp_analysis_data"] = analysis
+                                st.session_state["rp_analysis_loading"] = False
+                                st.session_state["rp_analysis_query"] = user_query
+                                st.session_state["rp_analysis_schema"] = schema_type
+                                st.session_state["rp_analysis_region"] = target_region
+                                st.session_state["rp_analysis_mode"] = mode
+                                # Pre-fill competitors from analysis
+                                analysis_comps = analysis.get("competitors", [])
+                                comp_list = []
+                                for c in analysis_comps:
+                                    comp_list.append({
+                                        "name": c.get("name", ""),
+                                        "company_name": c.get("company_name", ""),
+                                        "official_url": c.get("official_url", ""),
+                                        "url": c.get("official_url", ""),
+                                        "notes": c.get("note", ""),
+                                        "priority": c.get("priority", "medium"),
+                                    })
+                                st.session_state["rp_comps_list"] = comp_list
+                                st.session_state["rp_comps_edited"] = True  # mark as edited so user can adjust
+                                # Pre-fill schema from analysis
+                                if analysis.get("schema_type"):
+                                    st.session_state["rp_analysis_schema"] = analysis["schema_type"]
                                 st.rerun()
                         except Exception as exc:
-                            st.error(f"生成失败: {exc}")
+                            st.error(f"分析失败: {exc}")
+                            st.session_state["rp_analysis_loading"] = False
+
+                # ── Step 2: Confirm & Generate ──────────────────────────────────
+                elif st.session_state.get("rp_analysis_data") is not None:
+                    analysis = st.session_state["rp_analysis_data"]
+                    st.markdown("---")
+                    st.markdown("#### 📊 " + ("分析预览" if is_chinese else "Analysis Preview"))
+                    detected_lang = st.session_state.get("rp_analysis_data", {}).get("output_language", "zh")
+                    confidence = analysis.get("confidence_score", 0.0)
+                    if confidence > 0:
+                        conf_pct = int(confidence * 100)
+                        color = "green" if conf_pct >= 70 else "orange" if conf_pct >= 40 else "red"
+                        st.markdown(
+                            f"AI 置信度: :{color}[{conf_pct}%]"
+                            if is_chinese else
+                            f"AI Confidence: :{color}[{conf_pct}%]"
+                        )
+
+                    # Show inferred schema
+                    inferred_schema = analysis.get("schema_type", schema_type)
+                    schema_label_map = {
+                        "ai_agent_platform": "AI Agent 平台",
+                        "competitor_landscape": "竞品全景",
+                        "product_comparison": "产品对比",
+                        "pricing_analysis": "定价分析",
+                        "sales_battlecard": "销售战卡",
+                        "knowledge_management": "知识管理",
+                    }
+                    st.markdown(
+                        f"**推断 Schema 类型:** {schema_label_map.get(inferred_schema, inferred_schema)}"
+                        if is_chinese else
+                        f"**Inferred Schema Type:** {inferred_schema}"
+                    )
+
+                    # Show competitors
+                    comps = analysis.get("competitors", [])
+                    st.markdown(
+                        f"**识别竞品 ({len(comps)} 个):**"
+                        if is_chinese else
+                        f"**Identified Competitors ({len(comps)}):**"
+                    )
+                    if comps:
+                        for i, c in enumerate(comps):
+                            priority_emoji = {"high": "🔴", "medium": "🟡", "low": "🟢"}.get(c.get("priority", "medium"), "⚪")
+                            conf = c.get("confidence", 0)
+                            note = c.get("note", "")
+                            url = c.get("official_url", "")
+                            display = f"{priority_emoji} **{c.get('name', '')}**"
+                            if c.get("company_name"):
+                                display += f" ({c['company_name']})"
+                            if url:
+                                display += f" — {url}"
+                            if note:
+                                display += f"\n   └ {note}"
+                            if conf > 0:
+                                display += f" (conf: {int(conf*100)}%)"
+                            st.markdown(f"{i+1}. {display}")
+                    else:
+                        st.info("未识别到竞品，请手动添加。" if is_chinese else "No competitors identified. Please add manually.")
+
+                    # Warnings
+                    warnings = analysis.get("warnings", [])
+                    for w in warnings:
+                        st.warning(w)
+
+                    st.markdown("---")
+                    st.info(
+                        "请确认上述分析结果无误后，点击「确认并生成方案」。"
+                        if is_chinese else
+                        "Review the analysis above, then click 'Confirm & Generate Plan'."
+                    )
+                    col_confirm, col_reanalyze = st.columns(2)
+                    with col_confirm:
+                        if st.button(
+                            "✅ " + ("确认并生成方案" if is_chinese else "Confirm & Generate Plan"),
+                            type="primary", use_container_width=True,
+                        ):
+                            with st.spinner(
+                                "正在生成方案..." if is_chinese else "Generating plan..."
+                            ):
+                                try:
+                                    resp = requests.post(
+                                        f"{API_BASE}/api/research-plans/generate",
+                                        json={
+                                            "user_query": st.session_state.get("rp_analysis_query", user_query),
+                                            "schema_type": st.session_state.get("rp_analysis_schema", schema_type),
+                                            "target_region": st.session_state.get("rp_analysis_region", target_region),
+                                            "mode": st.session_state.get("rp_analysis_mode", mode),
+                                            "analyzed_data": {
+                                                "competitors": st.session_state.get("rp_comps_list", []),
+                                                "schema_type": st.session_state.get("rp_analysis_schema", schema_type),
+                                            },
+                                        },
+                                        timeout=60,
+                                    )
+                                    if resp.status_code >= 400:
+                                        st.error(f"生成失败: {resp.text}")
+                                    else:
+                                        result = resp.json()
+                                        st.session_state["rp_plan_id"] = result.get("research_plan_id")
+                                        st.session_state["rp_plan_data"] = result.get("research_plan")
+                                        st.session_state["rp_comps_edited"] = False
+                                        st.session_state["rp_dims_edited"] = False
+                                        st.session_state["rp_outline_edited"] = False
+                                        # Clear analysis state
+                                        st.session_state["rp_analysis_data"] = None
+                                        st.session_state["rp_analysis_done"] = True
+                                        st.session_state["rp_outline_sections"] = []
+                                        st.session_state["rp_outline_title"] = ""
+                                        st.success(
+                                            f"方案已生成！来源: {result.get('generated_by', 'unknown')}"
+                                        )
+                                        st.rerun()
+                                except Exception as exc:
+                                    st.error(f"生成失败: {exc}")
+                    with col_reanalyze:
+                        if st.button(
+                            "🔄 " + ("重新分析" if is_chinese else "Re-analyze"),
+                            use_container_width=True,
+                        ):
+                            st.session_state["rp_analysis_data"] = None
+                            st.session_state["rp_analysis_loading"] = False
+                            st.rerun()
         return  # stop here if no plan
 
     # ════════════════════════════════════════════════════════════════════════
@@ -321,12 +490,11 @@ def render_research_plan_page(run_id: str = None):
         "竞品" if is_chinese else "Competitors",
         "分析维度" if is_chinese else "Dimensions",
         "来源规划" if is_chinese else "Sources",
-        "报告大纲" if is_chinese else "Outline",
         "人工审核点" if is_chinese else "Review Points",
         "成功指标" if is_chinese else "Metrics",
         "DAG 预览" if is_chinese else "DAG",
     ]
-    tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs(tab_labels)
+    tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs(tab_labels)
 
     # ── Tab 1: Task Brief ────────────────────────────────────────────────
     with tab1:
@@ -365,12 +533,8 @@ def render_research_plan_page(run_id: str = None):
         else:
             st.info("无来源规划。" if is_chinese else "No source plan.")
 
-    # ── Tab 5: Report Outline ────────────────────────────────────────────
+    # ── Tab 5: Human Checkpoints ────────────────────────────────────────
     with tab5:
-        _render_outline_tab(plan, plan_id, is_chinese)
-
-    # ── Tab 6: Human Checkpoints ────────────────────────────────────────
-    with tab6:
         checkpoints = plan.get("human_checkpoints") or []
         if checkpoints:
             for cp in checkpoints:
@@ -382,8 +546,8 @@ def render_research_plan_page(run_id: str = None):
         else:
             st.info("无人工审核点。" if is_chinese else "No checkpoints.")
 
-    # ── Tab 7: Success Metrics ───────────────────────────────────────────
-    with tab7:
+    # ── Tab 6: Success Metrics ───────────────────────────────────────────
+    with tab6:
         metrics = plan.get("success_metrics") or {}
         if metrics:
             col_m = st.columns(4)
@@ -400,8 +564,8 @@ def render_research_plan_page(run_id: str = None):
         else:
             st.info("无成功指标。" if is_chinese else "No metrics.")
 
-    # ── Tab 8: DAG Preview ───────────────────────────────────────────────
-    with tab8:
+    # ── Tab 7: DAG Preview ───────────────────────────────────────────────
+    with tab7:
         if status == "confirmed":
             render_research_plan_dag_preview(plan_id, plan)
         else:
@@ -409,61 +573,206 @@ def render_research_plan_page(run_id: str = None):
 
     st.divider()
 
+    # ════════════════════════════════════════════════════════════════════════════
+    # STANDALONE OUTLINE BLOCK — outside tabs, between tabs and bottom actions
+    # ════════════════════════════════════════════════════════════════════════════
+    outline_from_plan = plan.get("report_outline") or {}
+
+    # Always ensure session state reflects the current plan's outline on every render.
+    # This prevents stale session state from showing wrong data after plan load.
+    st.session_state["rp_outline_sections"] = outline_from_plan.get("sections") or []
+    st.session_state["rp_outline_title"] = outline_from_plan.get("report_title") or (
+        ("竞品分析报告" if is_chinese else "Competitive Analysis Report"))
+    # Reset edit flag so any subsequent edits are tracked correctly
+    st.session_state["rp_outline_edited"] = False
+
+    sections = st.session_state["rp_outline_sections"]
+    title    = st.session_state["rp_outline_title"]
+
+    # ── Section header + title ──────────────────────────────────────
+    st.markdown("### 📋 " + ("报告大纲" if is_chinese else "Report Outline"))
+    title_col, btn_col = st.columns([4, 1])
+    with title_col:
+        new_title = st.text_input(
+            ("报告标题" if is_chinese else "Report Title"),
+            value=title,
+            label_visibility="collapsed",
+            placeholder=("报告标题，例如：Codex / Trae / Cursor 竞品分析报告" if is_chinese
+                        else "Report title, e.g. Codex / Trae / Cursor Competitive Analysis"),
+            key="rp_outline_title_input",
+        )
+        if new_title != title:
+            st.session_state["rp_outline_title"] = new_title
+    with btn_col:
+        st.markdown("")
+        lang_code = "zh" if is_chinese else "en"
+        if st.button(
+                "✨ " + ("AI 生成大纲" if is_chinese else "Generate Outline"),
+                type="primary", use_container_width=True,
+                disabled=st.session_state.get("rp_outline_generating", False),
+        ):
+            st.session_state["rp_outline_generating"] = True
+            st.rerun()
+
+    # ── LLM generation spinner ───────────────────────────────────────
+    if st.session_state.get("rp_outline_generating"):
+        with st.spinner(("正在调用 LLM 生成大纲，请稍候..." if is_chinese else
+                         "Generating outline with LLM, please wait...")):
+            try:
+                resp = requests.post(
+                    f"{API_BASE}/api/research-plans/{plan_id}/generate-outline",
+                    json={
+                        "competitors": st.session_state.get("rp_comps_list", plan.get("competitors", [])),
+                        "dimensions":  st.session_state.get("rp_dims_list",  plan.get("analysis_dimensions", [])),
+                        "language":    lang_code,
+                    },
+                    timeout=180,
+                )
+                if resp.status_code >= 400:
+                    st.error(f"生成失败: {resp.text}")
+                else:
+                    result      = resp.json()
+                    new_outline = result.get("outline", {})
+                    st.session_state["rp_outline_sections"] = new_outline.get("sections", [])
+                    st.session_state["rp_outline_title"]    = new_outline.get(
+                        "report_title", st.session_state["rp_outline_title"])
+                    try:
+                        updated_plan = dict(st.session_state.get("rp_plan_data", {}))
+                        updated_plan["report_outline"] = new_outline
+                        requests.put(
+                            f"{API_BASE}/api/research-plans/{plan_id}",
+                            json={"payload_json": json.dumps(updated_plan)},
+                            timeout=30,
+                        )
+                        st.session_state["rp_plan_data"] = updated_plan
+                        st.success(("大纲已生成并自动保存！" if is_chinese else "Outline generated and auto-saved!"))
+                    except Exception as save_exc:
+                        st.warning(
+                            ("大纲已生成但自动保存失败: " if is_chinese else "Outline generated but auto-save failed: ") + str(save_exc)
+                        )
+            except Exception as exc:
+                st.error(f"生成失败: {exc}")
+            finally:
+                st.session_state["rp_outline_generating"] = False
+                st.rerun()
+
+    # ── Compact outline table ───────────────────────────────────────
+    st.markdown("")  # small gap
+    non_trivial = [s for s in sections if s.get("type") not in ("cover", "appendix")]
+    product_count = len(plan.get("competitors", []))
+    min_sections = product_count * 3 if product_count > 0 else 6
+    if not sections:
+        st.info(
+            ("暂无大纲。点击上方「AI 生成大纲」按钮创建。" if is_chinese else
+             "No outline yet. Click 'Generate Outline' above to create one."))
+    else:
+        # ── Compact table: one row per section ────────────────────
+        rows = []
+        for i, s in enumerate(sections, 1):
+            rows.append({
+                "#": i,
+                ("章节" if is_chinese else "Title"): s.get("title", ""),
+                ("类型" if is_chinese else "Type"): (
+                    "章节" if s.get("type") == "chapter" or not s.get("type") else "小节"
+                ),
+                ("最低字数" if is_chinese else "Min Words"): s.get("min_words", 0),
+                ("审核" if is_chinese else "Review"): "🔴" if s.get("requires_human_review") else "",
+            })
+        st.table(pd.DataFrame(rows))
+        st.caption(
+            f"{len(sections)} 个章节 | "
+            + (f"{len(non_trivial)} 个正文章节" if is_chinese else f"{len(non_trivial)} substantive sections")
+            + (f" | {product_count} 个竞品" if product_count and is_chinese else "")
+            + (f" | {product_count} competitors" if product_count and not is_chinese else "")
+        )
+
+        # ── Inline quick edit ───────────────────────────────────────
+        with st.expander(("✏️  编辑大纲章节" if is_chinese else "Edit Sections"), expanded=False):
+            ch_to_del = []
+            for i, s in enumerate(list(sections)):
+                sid = s.get("section_id") or f"sec_{i}"
+                col_t, col_w, col_d = st.columns([4, 1, 1])
+                with col_t:
+                    new_t = st.text_input(
+                        ("标题" if is_chinese else "Title"),
+                        value=s.get("title", ""), key=f"oe_t_{sid}",
+                    )
+                    if new_t != s.get("title"):
+                        s["title"] = new_t
+                with col_w:
+                    new_w = st.number_input(
+                        ("字数" if is_chinese else "Words"),
+                        min_value=0, max_value=50000,
+                        value=int(s.get("min_words", 800) or 800),
+                        step=100, key=f"oe_w_{sid}",
+                    )
+                    if new_w != s.get("min_words"):
+                        s["min_words"] = new_w
+                with col_d:
+                    st.markdown("")
+                    if st.button("🗑️", key=f"oe_d_{sid}", use_container_width=True):
+                        ch_to_del.append(sid)
+            if ch_to_del:
+                sections[:] = [s for s in sections if s.get("section_id", "").replace("sec_", "") not in ch_to_del]
+                st.session_state["rp_outline_sections"] = sections
+                st.rerun()
+
+            col_add, _ = st.columns([1, 4])
+            with col_add:
+                if st.button("➕ " + ("添加章节" if is_chinese else "Add Section"), use_container_width=True):
+                    sections.append({
+                        "section_id": f"sec_{len(sections)+1:02d}",
+                        "title": ("新章节" if is_chinese else "New Section"),
+                        "type": "chapter",
+                        "min_words": 800,
+                        "requires_human_review": False,
+                        "purpose": "",
+                        "slug": ("xin-zhangjie" if is_chinese else "new-section"),
+                    })
+                    st.session_state["rp_outline_sections"] = sections
+                    st.rerun()
+
+            if st.button("💾 " + ("保存大纲" if is_chinese else "Save Outline"), type="primary", use_container_width=True):
+                _save_outline(plan_id, plan, is_chinese)
+
+    # ── Start Analysis button ────────────────────────────────────────
+    st.divider()
+    st.markdown("### " + ("🚀 开始分析" if is_chinese else "🚀 Start Analysis"))
+    # dag_id is only available after plan is confirmed; the confirmed block below
+    # renders its own button. Nothing to do here for the draft state.
+    if status == "draft":
+        st.info(
+            ("请先「确认方案」生成执行计划后，再开始分析。" if is_chinese else
+             "Please confirm the plan first, then start analysis.")
+        )
+
     # ── Bottom actions ───────────────────────────────────────────────────
     if status == "draft":
-        st.markdown("### " + ("修改方案" if is_chinese else "Revise Plan"))
-        revise_instruction = st.text_area(
-            "修改指令" if is_chinese else "Revision Instructions",
-            placeholder="例如：重点关注企业部署、安全和定价。添加 AutoGen 作为竞品。" if is_chinese
-            else "e.g. Focus on enterprise deployment, security and pricing. Add AutoGen as a competitor.",
-            height=80, key="rp_revise_input",
-        )
-        col_rev, col_ref = st.columns(2)
-        with col_rev:
-            if st.button(("根据指令修改" if is_chinese else "Revise Plan"),
+        st.markdown("### " + ("确认方案" if is_chinese else "Confirm Plan"))
+        st.info("确认后方案将无法修改，并将创建执行 DAG。" if is_chinese
+                   else "After confirmation the plan cannot be modified and a DAG will be created.")
+        col_confirm, col_reload = st.columns(2)
+        with col_confirm:
+            if st.button(("确认方案并创建 DAG" if is_chinese else "Confirm & Create DAG"),
                          type="primary", use_container_width=True):
-                if not revise_instruction.strip():
-                    st.error("请输入修改指令。" if is_chinese else "Enter instructions.")
-                else:
-                    with st.spinner("正在修改..." if is_chinese else "Revising..."):
-                        try:
-                            resp = requests.post(
-                                f"{API_BASE}/api/research-plans/{plan_id}/revise",
-                                json={"human_instruction": revise_instruction}, timeout=60,
-                            )
-                            if resp.status_code >= 400:
-                                st.error(f"修改失败: {resp.text}")
-                            else:
-                                st.session_state["rp_plan_data"] = resp.json().get("research_plan")
-                                st.success("方案已修改！" if is_chinese else "Plan revised!")
-                                st.rerun()
-                        except Exception as exc:
-                            st.error(f"修改失败: {exc}")
-        with col_ref:
+                with st.spinner("确认方案并创建 DAG..." if is_chinese else "Confirming..."):
+                    try:
+                        resp = requests.post(f"{API_BASE}/api/research-plans/{plan_id}/confirm",
+                                            json={}, timeout=60)
+                        if resp.status_code >= 400:
+                            st.error(f"确认失败: {resp.text}")
+                        else:
+                            result = resp.json()
+                            st.success(f"方案已确认！DAG: `{result.get('dag_id')}`")
+                            load_plan(plan_id)
+                            load_dag(plan_id)
+                            st.rerun()
+                    except Exception as exc:
+                        st.error(f"确认失败: {exc}")
+        with col_reload:
             if st.button("重新加载" if is_chinese else "Reload", use_container_width=True):
                 load_plan(plan_id)
                 st.rerun()
-
-        st.divider()
-        st.markdown("### " + ("确认方案" if is_chinese else "Confirm Plan"))
-        st.warning("确认后方案将无法修改，并将创建执行 DAG。" if is_chinese
-                   else "After confirmation the plan cannot be modified and a DAG will be created.")
-        if st.button(("确认方案并创建 DAG" if is_chinese else "Confirm & Create DAG"),
-                     type="primary", use_container_width=True):
-            with st.spinner("确认方案并创建 DAG..." if is_chinese else "Confirming..."):
-                try:
-                    resp = requests.post(f"{API_BASE}/api/research-plans/{plan_id}/confirm",
-                                        json={}, timeout=60)
-                    if resp.status_code >= 400:
-                        st.error(f"确认失败: {resp.text}")
-                    else:
-                        result = resp.json()
-                        st.success(f"方案已确认！DAG: `{result.get('dag_id')}`")
-                        load_plan(plan_id)
-                        load_dag(plan_id)
-                        st.rerun()
-                except Exception as exc:
-                    st.error(f"确认失败: {exc}")
 
     elif status == "confirmed":
         st.success("此方案已确认。执行 DAG 已创建。" if is_chinese
@@ -478,13 +787,33 @@ def render_research_plan_page(run_id: str = None):
 
         st.divider()
         st.markdown("### " + ("🚀 开始分析" if is_chinese else "🚀 Start Analysis"))
+        # Change 5: warn if outline is too thin
+        outline_sections = st.session_state.get("rp_outline_sections", [])
+        if outline_sections:
+            non_trivial = [s for s in outline_sections if s.get("type") not in ("cover", "appendix")]
+            product_count = len(plan.get("competitors", []))
+            min_sections = product_count * 3 if product_count > 0 else 6
+            if len(non_trivial) < min_sections:
+                st.warning(
+                    f"大纲目前仅 {len(non_trivial)} 个正文章节，建议至少 {min_sections} 个以确保报告完整性。"
+                    if is_chinese else
+                    f"Outline has only {len(non_trivial)} substantive sections, minimum {min_sections} recommended."
+                )
         st.warning("将以此方案创建项目并启动竞品分析执行。" if is_chinese
                    else "This will create a project from this plan and start execution.")
         col_start, _ = st.columns([1, 2])
         with col_start:
             if st.button("🚀 开始分析" if is_chinese else "🚀 Start Analysis",
                          type="primary", use_container_width=True):
-                _start_analysis_from_plan(plan, plan_id, dag_id)
+                # Change 6: validate outline has at least 3 sections before starting
+                if len(outline_sections) < 3:
+                    st.error(
+                        "大纲章节数过少（至少需要 3 个章节），请先生成或添加章节。"
+                        if is_chinese else
+                        "Outline has too few sections (minimum 3 required). Please generate or add sections first."
+                    )
+                else:
+                    _start_analysis_from_plan(plan, plan_id, dag_id)
 
     # Raw JSON
     with st.expander(("查看完整 JSON" if is_chinese else "View Full JSON"), expanded=False):
@@ -500,7 +829,8 @@ def _render_competitors_tab(plan, plan_id, is_chinese: bool):
     competitors = plan.get("competitors") or []
 
     # ── Derive working copy from plan (or session) ──────────────────────
-    if not st.session_state["rp_comps_edited"]:
+    # Guard: only init from plan if plan_id is set (prevents wiping on page load)
+    if not st.session_state["rp_comps_edited"] and plan_id:
         # Convert old schema to new schema in memory
         _comps = []
         for c in competitors:
@@ -653,7 +983,7 @@ def _render_competitors_tab(plan, plan_id, is_chinese: bool):
                 ("市场" if is_chinese else "Market"):        c.get("region", "global"),
                 ("用户要求" if is_chinese else "Notes"):      c.get("notes", "")[:40],
             })
-        st.dataframe(pd.DataFrame(summary), hide_index=True, use_container_width=True)
+        st.table(pd.DataFrame(summary))
 
         # ── Save button ────────────────────────────────────────────────────
         st.divider()
@@ -892,11 +1222,11 @@ def _render_outline_tab(plan, plan_id, is_chinese: bool):
     # ── Language-aware initial state ────────────────────────────────────
     outline_from_plan = plan.get("report_outline") or {}
 
-    if not st.session_state["rp_outline_edited"]:
-        st.session_state["rp_outline_sections"] = outline_from_plan.get("sections") or []
-        st.session_state["rp_outline_title"]      = outline_from_plan.get("report_title") or (
-            ("竞品分析报告" if is_chinese else "Competitive Analysis Report"))
-        st.session_state["rp_outline_edited"]    = True
+    # Always sync from plan on every render
+    st.session_state["rp_outline_sections"] = outline_from_plan.get("sections") or []
+    st.session_state["rp_outline_title"] = outline_from_plan.get("report_title") or (
+        ("竞品分析报告" if is_chinese else "Competitive Analysis Report"))
+    st.session_state["rp_outline_edited"] = False
 
     sections = st.session_state["rp_outline_sections"]
     title    = st.session_state["rp_outline_title"]
@@ -957,7 +1287,22 @@ def _render_outline_tab(plan, plan_id, is_chinese: bool):
                     st.session_state["rp_outline_sections"] = new_outline.get("sections", [])
                     st.session_state["rp_outline_title"]    = new_outline.get(
                         "report_title", st.session_state["rp_outline_title"])
-                    st.success(("大纲已生成！" if is_chinese else "Outline generated!"))
+                    # Change 6: auto-save outline to plan after LLM generation
+                    try:
+                        updated_plan = dict(st.session_state.get("rp_plan_data", {}))
+                        updated_plan["report_outline"] = new_outline
+                        requests.put(
+                            f"{API_BASE}/api/research-plans/{plan_id}",
+                            json={"payload_json": json.dumps(updated_plan)},
+                            timeout=30,
+                        )
+                        st.session_state["rp_plan_data"] = updated_plan
+                        st.success(("大纲已生成并自动保存！" if is_chinese else "Outline generated and auto-saved!"))
+                    except Exception as save_exc:
+                        st.warning(
+                            ("大纲已生成但自动保存失败，请手动保存。错误: " if is_chinese else
+                             "Outline generated but auto-save failed. Please save manually. Error: ") + str(save_exc)
+                        )
             except Exception as exc:
                 st.error(f"生成失败: {exc}")
             finally:
@@ -1111,7 +1456,7 @@ def _render_outline_tab(plan, plan_id, is_chinese: bool):
                 ("最低字数" if is_chinese else "Min Words"): s.get("min_words", 0),
                 ("审核" if is_chinese else "Review"): "🔴" if s.get("requires_human_review") else "",
             })
-        st.dataframe(pd.DataFrame(rows), hide_index=True, use_container_width=True)
+        st.table(pd.DataFrame(rows))
 
     # ── Add new chapter / subsection ───────────────────────────────────
     st.divider()
