@@ -14,6 +14,17 @@ export interface WorkflowNode {
   // collect_sources node enriched fields
   collection_stats: CollectionStats | null;
   sources: WorkflowSource[];
+  // P1-Redesign (2026-06-18): realistic-mode parallel expansion fields.
+  // When node_type is "parallel_worker" or "parallel_group", these are populated
+  // by the /dag/expanded endpoint.
+  label?: string;
+  product_id?: string;
+  product_index?: number;
+  parallel_group?: string;
+  child_count?: number;
+  overflow_count?: number;
+  expanded?: boolean;
+  parallel_count?: number;
 }
 
 export interface CollectionStats {
@@ -45,6 +56,9 @@ export interface WorkflowEdge {
   to_node: string;
   edge_type: string;
   condition: unknown | null;
+  // P1-Redesign (2026-06-18): rework loop annotation (populated by /dag/expanded)
+  rework_count?: number;
+  rework_kind?: string;
 }
 
 export interface WorkflowSummary {
