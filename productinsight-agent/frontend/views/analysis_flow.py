@@ -26,7 +26,7 @@ from frontend.common.formatters import _workflow_node_icon
 
 # DAG App URL (ReactFlow visualization running on port 3001)
 import os as _os
-_DAG_APP_URL = _os.environ.get("DAG_APP_URL", "http://172.18.40.105:3001")
+_DAG_APP_URL = _os.environ.get("DAG_APP_URL", "http://localhost:3001")
 
 
 def render_dag_iframe(run_id: str, height: int = 580):
@@ -81,6 +81,11 @@ def render_analysis_flow(run_id: Optional[str] = None):
             st.rerun()
 
     stage = st.session_state.get("af_stage", "intake")
+
+    # Analysis Flow 主页是"启动新任务"的入口，永远停在 intake 阶段；
+    # running 状态由侧边栏的 "Running Center" 标签页展示。去掉之前的
+    # auto-discover 逻辑（如果存在 running 的 run 就把 stage 改成 running），
+    # 该逻辑会污染 Analysis Flow 主页。
 
     # -------------------------------------------------------------------------
     # Stage 1: Intake — Conversational intake form
@@ -171,6 +176,53 @@ def render_analysis_flow(run_id: Optional[str] = None):
             except Exception:
                 pass
 
+        # ── Run selector dropdown ────────────────────────────────────────
+        # Allow user to switch between running runs without leaving Running Center.
+        # effective_run_id is computed here (moved up from below) so the dropdown
+        # can use it for default-selection. It is also needed by the rest of the page.
+        _effective_run_id = run_id
+        if not _effective_run_id and proj_id:
+            try:
+                pr = requests.get(f"{API_BASE}/api/projects/{proj_id}", timeout=10)
+                if pr.status_code == 200:
+                    lr = pr.json().get("latest_run") or {}
+                    _effective_run_id = lr.get("run_id") or ""
+            except Exception:
+                pass
+
+        _running_runs_for_select: list[dict] = []
+        try:
+            _sel_resp = requests.get(f"{API_BASE}/api/runs?status=running&limit=20", timeout=10)
+            if _sel_resp.status_code == 200:
+                _sel_data = _sel_resp.json()
+                _running_runs_for_select = _sel_data if isinstance(_sel_data, list) else _sel_data.get("runs", [])
+        except Exception:
+            pass
+
+        if _running_runs_for_select:
+            _sel_options = {r["run_id"]: r for r in _running_runs_for_select}
+            _sel_labels = {
+                rid: f"{rid[:20]}… | {r.get('current_node', '?') or r.get('status', '?')} | {r.get('created_at', '')[:19]}"
+                for rid, r in _sel_options.items()
+            }
+            _sel_keys = list(_sel_options.keys())
+            _sel_default = _sel_keys.index(_effective_run_id) if _effective_run_id in _sel_keys else 0
+            _chosen = st.selectbox(
+                "选择运行的 Run",
+                options=_sel_keys,
+                index=_sel_default,
+                format_func=lambda x: _sel_labels[x],
+                help="切换到另一个正在运行的 Run",
+            )
+            if _chosen != _effective_run_id:
+                st.session_state["selected_run_id"] = _chosen
+                _new_proj = _sel_options[_chosen].get("project_id")
+                if _new_proj:
+                    st.session_state["selected_project_id"] = _new_proj
+                st.rerun()
+
+        effective_run_id = _effective_run_id
+
         if not proj_id:
             st.warning("没有正在运行的 Run。请从 Analysis Flow 页面启动分析任务。")
             reset_analysis_flow_state()
@@ -184,16 +236,6 @@ def render_analysis_flow(run_id: Optional[str] = None):
                 proj_name = pr.json().get("project_name", "Unknown Project")
         except Exception:
             pass
-
-        effective_run_id = run_id
-        if not effective_run_id and proj_id:
-            try:
-                pr = requests.get(f"{API_BASE}/api/projects/{proj_id}", timeout=10)
-                if pr.status_code == 200:
-                    lr = pr.json().get("latest_run") or {}
-                    effective_run_id = lr.get("run_id") or ""
-            except Exception:
-                pass
 
         live_data = None
         if effective_run_id:
@@ -481,14 +523,11 @@ def render_analysis_flow(run_id: Optional[str] = None):
             else:
                 st.error(f"❌ 分析失败 — {qg_reason[:120] if qg_reason else '未知原因，请前往审查中心查看'}")
 
-        col_del, col_ws, col_hr = st.columns([1, 1, 1])
+        col_del, col_ws = st.columns([1, 1])
         view_del_clicked = st.button("查看交付物", key=f"af_running_vd_{effective_run_id or 'none'}", type="primary", use_container_width=True)
         with col_ws:
             if st.button("项目工作台", key=f"af_running_ws_{effective_run_id or 'none'}", use_container_width=True):
                 goto_page("Project Workspace")
-        with col_hr:
-            if st.button("审查中心", key=f"af_running_hr_{effective_run_id or 'none'}", use_container_width=True):
-                goto_page("Review Center")
 
         if view_del_clicked:
             st.session_state["af_stage"] = "deliverables"
@@ -500,7 +539,11 @@ def render_analysis_flow(run_id: Optional[str] = None):
                 st.button("刷新", key=f"af_refresh_{effective_run_id or 'none'}", use_container_width=True)
             with col_auto:
                 auto_refresh = st.checkbox("自动刷新 (每 2 秒)", value=True, key=f"af_ar_{effective_run_id or 'none'}")
-            if auto_refresh:
+            # Only auto-refresh if the run is still active; stop when done/failed
+            if auto_refresh and run_status in ("pending", "running"):
+                # P0-Fix: Set lock so sidebar navigation handler skips processing
+                # on this programmatic rerun — prevents accidental page jump.
+                st.session_state["_nav_lock"] = True
                 time.sleep(2)
                 st.rerun()
 
