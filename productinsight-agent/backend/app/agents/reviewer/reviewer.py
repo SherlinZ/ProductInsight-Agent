@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import re
 import uuid
 from datetime import datetime, timezone
 from typing import Any
@@ -46,6 +47,110 @@ ALLOWED_DIMENSIONS = frozenset({
     "offline_capability",
     "product_overview",
 })
+
+
+def _normalize_dimension_to_allowed(raw_dim: str) -> str:
+    """
+    P0 (2026-06-22): Normalize a claim's dimension to an ALLOWED_DIMENSIONS entry.
+
+    The analyst may generate claims with Chinese dimension names (功能, 用户场景, 风险,
+    部署, 定价) based on evidence content, while evidence schema_keys are in English
+    (user_persona, function_tree, ai_assistance). The reviewer's schema_compliance check
+    rejects these as SCHEMA_MISMATCH.
+
+    This function applies a comprehensive Chinese↔English mapping so that Chinese dimensions
+    like "功能" → "function_tree", "用户场景" → "user_persona", etc. are accepted.
+    """
+    if not raw_dim:
+        return raw_dim
+
+    dim = str(raw_dim).strip()
+    dim_lower = dim.lower()
+
+    # Chinese → English mapping (most common cases from evidence-based claim generation)
+    CHINESE_TO_ENGLISH = {
+        "功能": "function_tree",
+        "功能特性": "function_tree",
+        "核心功能": "function_tree",
+        "产品功能": "function_tree",
+        "能力": "function_tree",
+        "功能树": "function_tree",
+        "workflow": "function_tree",
+        "工作流": "function_tree",
+        "编排": "function_tree",
+        "rag": "function_tree",
+        "知识库": "knowledge_base",
+        "模型支持": "model_support",
+        "llm": "model_support",
+        "模型": "model_support",
+        "ai": "ai_assistance",
+        "ai辅助": "ai_assistance",
+        "智能助手": "ai_assistance",
+        "copilot": "ai_assistance",
+        "用户场景": "user_persona",
+        "目标用户": "user_persona",
+        "使用场景": "user_persona",
+        "场景": "user_persona",
+        "persona": "user_persona",
+        "用户画像": "user_persona",
+        "定价": "pricing_model",
+        "价格": "pricing_model",
+        "费用": "pricing_model",
+        "pricing": "pricing_model",
+        "成本": "pricing_model",
+        "免费": "pricing_model",
+        "收费": "pricing_model",
+        "企业版": "enterprise_readiness",
+        "企业级": "enterprise_readiness",
+        "合规": "enterprise_readiness",
+        "安全": "security",
+        "sso": "enterprise_readiness",
+        "rbac": "enterprise_readiness",
+        "权限": "permission_governance",
+        "部署": "deployment_options",
+        "部署方式": "deployment_options",
+        "私有化": "deployment_options",
+        "saas": "deployment_options",
+        "云端": "deployment_options",
+        "风险": "swot",
+        "风险分析": "swot",
+        "swot": "swot",
+        "优势": "swot",
+        "劣势": "swot",
+        "机会": "swot",
+        "威胁": "swot",
+        "市场定位": "market_positioning",
+        "定位": "market_positioning",
+        "对比": "function_comparison",
+        "比较": "function_comparison",
+        "集成": "integration",
+        "生态系统": "ecosystem",
+        "生态": "ecosystem",
+        "用户反馈": "customer_voice",
+        "口碑": "customer_voice",
+        "评测": "customer_voice",
+    }
+
+    # Direct lookup
+    if dim_lower in CHINESE_TO_ENGLISH:
+        return CHINESE_TO_ENGLISH[dim_lower]
+
+    # Partial match: if dim_lower is contained in a Chinese key
+    for cn_key, en_val in CHINESE_TO_ENGLISH.items():
+        if cn_key in dim_lower or dim_lower in cn_key:
+            return en_val
+
+    # Check if it matches an ALLOWED_DIMENSIONS entry directly
+    if dim_lower in ALLOWED_DIMENSIONS:
+        return dim_lower
+
+    # Check if it contains an allowed dimension (e.g., "rag_knowledge" → "rag")
+    for allowed in ALLOWED_DIMENSIONS:
+        if allowed in dim_lower or dim_lower in allowed:
+            return allowed
+
+    # Fallback: return as-is and let the ALLOWED_DIMENSIONS check catch it
+    return dim
 
 _REASON_CODE_TO_AGENT: dict[str, str] = {
     "MISSING_EVIDENCE": "collector_agent",
@@ -219,17 +324,21 @@ class ReviewerAgent:
 
         # ── 3. schema_compliance ───────────────────────────────────────────────
         dimension = claim.get("dimension")
-        if dimension and dimension in ALLOWED_DIMENSIONS:
+        # P0 (2026-06-22): Apply dimension normalization before checking ALLOWED_DIMENSIONS.
+        # This handles Chinese dimension names (功能, 用户场景) that the analyst generates
+        # from evidence content, which don't exist in ALLOWED_DIMENSIONS (English-only).
+        normalized_dim = _normalize_dimension_to_allowed(dimension or "")
+        if normalized_dim and normalized_dim in ALLOWED_DIMENSIONS:
             checks.append({
                 "check_name": "schema_compliance",
                 "status": "pass",
-                "details": f"Dimension '{dimension}' is valid.",
+                "details": f"Dimension '{dimension}' → '{normalized_dim}' is valid.",
             })
         else:
             checks.append({
                 "check_name": "schema_compliance",
                 "status": "fail",
-                "details": f"Dimension '{dimension}' is not in the allowed set: {sorted(ALLOWED_DIMENSIONS)}",
+                "details": f"Dimension '{dimension}' (normalized: '{normalized_dim}') is not in the allowed set.",
             })
             fail_codes.append("SCHEMA_MISMATCH")
 
@@ -523,11 +632,14 @@ class ReviewerAgent:
         invalid_dimensions: list[dict[str, str]] = []
         for claim in signed_claims:
             dim = claim.get("dimension")
-            if dim and dim not in ALLOWED_DIMENSIONS:
-                invalid_dimensions.append({
-                    "claim_id": claim.get("claim_id", "unknown"),
-                    "dimension": str(dim),
-                })
+            # P0 (2026-06-22): Apply dimension normalization here too
+            normalized_dim = _normalize_dimension_to_allowed(dim or "")
+            if normalized_dim and normalized_dim in ALLOWED_DIMENSIONS:
+                continue  # valid
+            invalid_dimensions.append({
+                "claim_id": claim.get("claim_id", "unknown"),
+                "dimension": str(dim),
+            })
 
         if invalid_dimensions:
             checks.append({
