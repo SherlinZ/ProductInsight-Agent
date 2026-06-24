@@ -36,7 +36,7 @@ from backend.app.tracing.llm_trace import traced_llm_call, create_llm_fallback_t
 logger = logging.getLogger(__name__)
 
 # Prompt version for research plan LLM calls
-PLANNER_PROMPT_VERSION = "v1.0"
+PLANNER_PROMPT_VERSION = "v2.0"
 
 
 # ---------------------------------------------------------------------------
@@ -820,6 +820,18 @@ KNOWN_COMPETITORS: dict[str, dict[str, Any]] = {
         "seed_urls": ["https://cursor.com", "https://github.com/getcursor/cursor"],
         "known_aliases": ["Cursor AI"],
     },
+    "ClaudeCode": {
+        "company_name": "Anthropic",
+        "official_url": "https://docs.anthropic.com/en/docs/claude-code",
+        "seed_urls": ["https://docs.anthropic.com/en/docs/claude-code"],
+        "known_aliases": ["Claude Code"],
+    },
+    "Codex": {
+        "company_name": "OpenAI",
+        "official_url": "https://platform.openai.com/docs/models#codex",
+        "seed_urls": ["https://platform.openai.com/docs/models#codex"],
+        "known_aliases": ["OpenAI Codex"],
+    },
     "Windsurf": {
         "company_name": "Codeium",
         "official_url": "https://codeium.com/windsurf",
@@ -831,6 +843,12 @@ KNOWN_COMPETITORS: dict[str, dict[str, Any]] = {
         "official_url": "https://trae.ai",
         "seed_urls": ["https://trae.ai"],
         "known_aliases": ["Trae AI", "ByteDance Trae"],
+    },
+    "CloudCode": {
+        "company_name": "Google Cloud",
+        "official_url": "https://cloud.google.com/code?hl=en",
+        "seed_urls": ["https://cloud.google.com/code?hl=en"],
+        "known_aliases": ["Google Cloud Code", "Google CloudCode"],
     },
     "GitHub Copilot": {
         "company_name": "Microsoft/GitHub",
@@ -924,14 +942,18 @@ def _is_generic_term(name: str) -> bool:
     for prefix in skip_prefixes:
         if name_lower.startswith(prefix):
             return True
-    # Check if name ends with generic suffix
+    # Check if name ends with generic suffix (but NOT if it's a known compound like CloudCode)
     generic_suffixes = [
         " ai", " platform", " tool", " tools", " agent", " agents",
-        " studio", " hub", " cloud", " suite", " system", " solution",
+        " studio", " hub", " suite", " system", " solution",
     ]
     for suffix in generic_suffixes:
         if name_lower.endswith(suffix):
             return True
+    # "cloud" as suffix: only generic when it's the word "cloud" + suffix
+    # "cloudcode" (CloudCode) is NOT generic — only flag standalone " cloud"
+    if name_lower.endswith(" cloud") or name_lower == "cloud":
+        return True
     return False
 
 
@@ -1140,9 +1162,17 @@ def _extract_competitors_from_query(user_query: str) -> list[CompetitorSpec]:
         name_lower = name.lower()
         aliases_lower = [a.lower() for a in info.get("known_aliases", [])]
 
-        # Check if name or any alias appears in the query
-        if name_lower in query_lower or any(alias in query_lower for alias in aliases_lower):
-            if name not in found_names:
+        # Word-boundary matching that works with Chinese/English mixed text.
+        # Use (?<![a-z0-9]) and (?![a-z0-9]) to ensure word is not adjacent
+        # to alphanumeric on either side. This handles "codex" in "针对codex"
+        # correctly while preventing "cloudcode" from matching "cloudecode".
+        import re as _re
+        def _word_match(text: str, word: str) -> bool:
+            p = rf'(?<![a-z0-9]){_re.escape(word)}(?![a-z0-9])'
+            return bool(_re.search(p, text, _re.IGNORECASE))
+
+        if _word_match(query_lower, name_lower) or any(_word_match(query_lower, a) for a in aliases_lower):
+            if name_lower not in found_names:
                 competitors.append(CompetitorSpec(
                     competitor_id=f"comp_{name.lower().replace(' ', '_')}",
                     name=name,
@@ -1152,25 +1182,50 @@ def _extract_competitors_from_query(user_query: str) -> list[CompetitorSpec]:
                     known_aliases=info.get("known_aliases", []),
                     priority="high",
                 ))
-                found_names.add(name)
+                found_names.add(name_lower)
 
     # Also try to extract any capitalized names that might be product names
     # but filter out generic terms
     capitalized_pattern = re.findall(r'\b[A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+)*\b', user_query)
     for cap in capitalized_pattern:
-        if cap not in found_names and len(cap) > 2:
+        cap_lower = cap.lower()
+        if cap_lower not in found_names and len(cap) > 2:
             # Skip known abbreviations
             if cap in {"AI", "API", "SDK", "LLM", "RAG", "UI", "SaaS", "PaaS", "IaaS"}:
                 continue
             # Skip generic terms
-            if _is_generic_term(cap):
+            if _is_generic_term(cap_lower):
                 continue
             competitors.append(CompetitorSpec(
                 competitor_id=f"comp_{cap.lower().replace(' ', '_')}",
                 name=cap,
                 priority="medium",
             ))
-            found_names.add(cap)
+            found_names.add(cap_lower)
+
+    # Also match all-lowercase product names (e.g. "codex, trae, cursor, cloudecode")
+    # This catches queries typed entirely in lowercase
+    lowercase_pattern = re.findall(r'\b[a-z][a-z0-9_]+(?:\s+[a-z][a-z0-9_]+)*\b', user_query)
+    GENERIC_SKIPS = {
+        "code", "compare", "competitive", "analysis", "product", "tool",
+        "platform", "feature", "vs", "against", "and", "for", "with",
+        "openai", "anthropic", "google", "microsoft",
+    }
+    for lc in lowercase_pattern:
+        lc_lower = lc.lower()
+        if lc_lower not in found_names and len(lc_lower) > 2:
+            if lc_lower in GENERIC_SKIPS:
+                continue
+            if _is_generic_term(lc_lower):
+                continue
+            # Title-case for display
+            display_name = lc_lower.title()
+            competitors.append(CompetitorSpec(
+                competitor_id=f"comp_{lc_lower.replace(' ', '_')}",
+                name=display_name,
+                priority="medium",
+            ))
+            found_names.add(lc_lower)
 
     return competitors
 
@@ -1244,11 +1299,27 @@ Only plan what should be collected, analyzed, reviewed, and reported.
 Return valid JSON only with the following structure:
 {
   "objective": "Clear research objective",
+  "competitors": [
+    {
+      "name": "Product or company name",
+      "company_name": "Parent company name if applicable",
+      "official_url": "https://...",
+      "priority": "high|medium|low"
+    }
+  ],
   "competitor_selection_rationale": "Why these competitors were selected",
   "source_plan": [...],
   "schema_plan": [...],
   "workflow_plan": [...]
 }
+
+IMPORTANT - Competitor Identification Rules:
+- Extract ALL product/company names mentioned in the query (do NOT rely on any hardcoded dictionary)
+- Handle ANY casing: Codex, CODEX, codex, claudeCode, ClaudeCode, claude code, Claude Code all refer to the same entity
+- Include the company's official URL if you can infer or recall it
+- Set priority to "high" for explicitly named competitors, "medium" for implied ones
+- Do NOT skip competitors just because you don't have full URL info
+- Always include at least the competitors explicitly named in the query
 
 Be specific about dimensions and source types based on the query."""
 
@@ -1276,9 +1347,14 @@ Schema Type: {schema_type}
 Target Region: {target_region}
 Mode: {mode}
 
+IMPORTANT: Your primary task is to identify ALL competitors mentioned in the query.
+Do NOT use any hardcoded dictionary. Extract competitor names directly from the query text.
+Handle all casing variations (e.g., "codex", "Codex", "CODEX" all refer to the same product).
+
 Return the research plan as JSON with these keys:
 - objective: What to achieve
-- competitor_selection_rationale: Why these competitors
+- competitors: Array of competitor objects with name (required), company_name, official_url, priority
+- competitor_selection_rationale: Why these competitors were selected
 - source_plan: Array of objects with step, phase, action, targets, purpose
 - schema_plan: Array of objects with dimension, label, schema_keys
 - workflow_plan: Array of objects with phase, nodes, description"""
@@ -1360,11 +1436,14 @@ def _generate_fallback_plan(
     target_region: str,
     mode: str,
     language_config: dict[str, Any] | None = None,
+    skip_outline_generation: bool = False,
 ) -> dict[str, Any]:
     """Generate a deterministic fallback research plan.
-    
+
     Args:
         language_config: Optional language-specific configuration for localized output
+        skip_outline_generation: If True, do NOT call LLM to generate outline.
+                                Outline is always a separate user-triggered step.
     """
     if language_config is None:
         language_config = get_language_config("zh")
@@ -1408,6 +1487,38 @@ def _generate_fallback_plan(
         schema_type,
         REPORT_OUTLINE_TEMPLATES["competitor_landscape"]
     )
+
+    # ── Outline: only generate if not skipped ────────────────────────────────
+    # Outline is ALWAYS a separate user-triggered step.
+    # If skip_outline_generation is True, use the template outline only (no LLM).
+    if not skip_outline_generation:
+        try:
+            from backend.app.services.outline_generator import generate_report_outline as _llm_gen_outline
+            language_code = "zh" if language_config.get("output_language") == "中文" else "en"
+            llm_outline = _llm_gen_outline(
+                competitors=competitors_dicts,
+                dimensions=analysis_dimensions,
+                language=language_code,
+            )
+            llm_sections = llm_outline.get("sections", [])
+            if llm_sections and len(llm_sections) >= len(outline_sections):
+                logger.info(
+                    "LLM outline (%d sections) >= template (%d sections) — using LLM outline",
+                    len(llm_sections), len(outline_sections),
+                )
+                outline_sections = llm_sections
+                if llm_outline.get("report_title"):
+                    report_title = llm_outline["report_title"]
+            else:
+                logger.info(
+                    "LLM outline (%d sections) < template (%d sections) — using template outline",
+                    len(llm_sections), len(outline_sections),
+                )
+        except Exception as exc:
+            logger.warning("LLM outline generation in plan phase failed: %s — using template outline", exc)
+    else:
+        logger.info("Outline generation skipped (user will generate separately)")
+
     report_sections = [ReportSection(**s) for s in outline_sections]
 
     # Build TaskBrief
@@ -1522,6 +1633,215 @@ def _generate_fallback_plan(
 
 
 # ---------------------------------------------------------------------------
+# Query Analysis (LLM-powered, replaces rule-based extraction)
+# ---------------------------------------------------------------------------
+
+ANALYZE_PROMPT_VERSION = "v1.0"
+
+
+ANALYZE_SYSTEM_PROMPT_ZH = """你是一个专业的竞品分析规划助手。你的任务是从用户的自然语言输入中提取所有关键信息。
+
+【强制要求】所有输出内容必须使用中文，不得使用英文或混合语言。
+
+请仔细分析用户输入，识别：
+1. **竞品列表**：用户提到的所有竞品名称，包括任何大小写变体（如 codex、Codex、CODEX 都指同一产品）
+2. **分析意图**：用户想做什么类型的分析（如竞品全景、产品对比、定价分析、销售战卡等）
+3. **推荐维度**：根据竞品类型推荐的分析维度
+4. **目标区域**：目标市场区域
+5. **输出语言**：用户期望的报告语言
+
+重要规则：
+- 如果输入是纯中文，输出也必须是中文
+- 竞品识别不依赖任何硬编码字典，直接从用户输入中提取
+- 大小写不敏感：codex、Codex、CODEX、ClaudeCode、claude code 都是有效的竞品名称
+- 排除通用术语（AI、Agent、Platform 等）
+- 如果用户只说了"竞品分析"而没有明确竞品，从输入中推断最可能的产品
+
+返回格式为JSON：
+{
+    "inferred_intent": "用户想做什么（中文描述）",
+    "competitors": [
+        {
+            "name": "竞品名称",
+            "company_name": "母公司名称（如有）",
+            "official_url": "官方网址（如能推断）",
+            "priority": "high|medium|low",
+            "confidence": 0.0-1.0,
+            "note": "识别依据"
+        }
+    ],
+    "schema_type": "ai_agent_platform|competitor_landscape|product_comparison|pricing_analysis|sales_battlecard|knowledge_management",
+    "analysis_dimensions": [
+        {
+            "dimension_id": "dimension_id",
+            "name": "维度名称（中文）",
+            "reason": "为什么推荐这个维度"
+        }
+    ],
+    "target_region": "global|china|us|europe|southeast_asia",
+    "output_language": "zh|en",
+    "confidence_score": 0.0-1.0,
+    "warnings": ["警告信息（如有）"]
+}"""
+
+
+ANALYZE_SYSTEM_PROMPT_EN = """You are a professional competitive analysis planning assistant. Your task is to extract all key information from the user's natural language input.
+
+Please carefully analyze the user input to identify:
+1. **Competitors**: All product/company names mentioned by the user
+2. **Intent**: What type of analysis the user wants
+3. **Recommended dimensions**: Analysis dimensions based on competitor type
+4. **Target region**: Target market region
+5. **Output language**: Expected report language
+
+Important rules:
+- If input is in Chinese, output should be in Chinese
+- Competitor identification is NOT based on any hardcoded dictionary — extract directly from input
+- Case-insensitive: codex, Codex, CODEX all refer to the same product
+- Exclude generic terms (AI, Agent, Platform, etc.)
+- If user only says "competitive analysis" without naming competitors, infer the most likely ones from context
+
+Return format as JSON:
+{
+    "inferred_intent": "What the user wants to do",
+    "competitors": [
+        {
+            "name": "Product name",
+            "company_name": "Parent company name (if applicable)",
+            "official_url": "Official URL (if inferrable)",
+            "priority": "high|medium|low",
+            "confidence": 0.0-1.0,
+            "note": "Identification basis"
+        }
+    ],
+    "schema_type": "ai_agent_platform|competitor_landscape|product_comparison|pricing_analysis|sales_battlecard|knowledge_management",
+    "analysis_dimensions": [
+        {
+            "dimension_id": "dimension_id",
+            "name": "Dimension name",
+            "reason": "Why this dimension is recommended"
+        }
+    ],
+    "target_region": "global|china|us|europe|southeast_asia",
+    "output_language": "zh|en",
+    "confidence_score": 0.0-1.0,
+    "warnings": ["Warning messages (if any)"]
+}"""
+
+
+def analyze_query(
+    user_query: str,
+    target_region: str = "global",
+    run_id: str | None = None,
+    project_id: str | None = None,
+    detected_language: str = "zh",
+) -> dict[str, Any]:
+    """
+    Analyze user query using LLM to extract competitors, intent, dimensions, and schema.
+
+    This replaces the old rule-based _extract_competitors_from_query and infer_schema_type
+    functions with a single intelligent LLM call.
+
+    Args:
+        user_query: Natural language research query
+        target_region: Target market region hint
+        run_id: Optional run ID for trace logging
+        project_id: Optional project ID for trace logging
+        detected_language: Detected language ('zh', 'en', or 'mixed')
+
+    Returns:
+        Dict with competitors, schema_type, dimensions, target_region, etc.
+    """
+    if not run_id:
+        run_id = f"analyze_{generate_id('run')}"
+
+    system_prompt = ANALYZE_SYSTEM_PROMPT_ZH if detected_language in ("zh", "mixed") else ANALYZE_SYSTEM_PROMPT_EN
+    user_prompt = f"""请分析以下用户输入：
+
+{user_query}
+
+目标区域提示: {target_region}
+
+请返回JSON格式的分析结果。"""
+
+    input_payload = {
+        "user_query_length": len(user_query),
+        "target_region": target_region,
+        "detected_language": detected_language,
+    }
+
+    def _do_llm_call():
+        client = get_llm_client()
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ]
+        return client.chat_text(messages, temperature=0.2, max_tokens=2048)
+
+    def _parse_response(response: Any) -> dict[str, Any]:
+        import json as _json
+        import re as _re
+        text = str(response).strip()
+        match = _re.search(r'\{.*\}', text, _re.DOTALL)
+        if match:
+            return _json.loads(match.group(0))
+        return _json.loads(text)
+
+    try:
+        result = traced_llm_call(
+            run_id=run_id,
+            project_id=project_id,
+            node_name="query_analysis",
+            agent_name="QueryAnalyzer",
+            agent_role="query_analyzer",
+            prompt_version=ANALYZE_PROMPT_VERSION,
+            prompt_text=f"System: {system_prompt}\n\nUser: {user_prompt}",
+            input_payload=input_payload,
+            call_fn=_do_llm_call,
+            parse_fn=_parse_response,
+            input_length_hint=len(system_prompt) + len(user_prompt),
+            decision_summary="Analyzed user query for competitors, intent, and dimensions",
+        )
+        parsed = result.get("parsed_output") or result.get("output_text", {})
+        if isinstance(parsed, str):
+            import json
+            parsed = json.loads(parsed)
+        return parsed
+
+    except Exception as exc:
+        logger.warning("LLM query analysis failed: %s — falling back to rules", exc)
+
+        create_llm_fallback_trace(
+            run_id=run_id,
+            project_id=project_id,
+            node_name="query_analysis",
+            agent_name="QueryAnalyzer",
+            agent_role="query_analyzer",
+            prompt_version=ANALYZE_PROMPT_VERSION,
+            prompt_text=f"System: {system_prompt}\n\nUser: {user_prompt}",
+            input_payload=input_payload,
+            reason=f"LLM_UNAVAILABLE_OR_INVALID_JSON: {type(exc).__name__}: {exc}",
+            decision_summary="Fallback to rule-based extraction",
+        )
+
+        # Fallback: use existing rule-based extraction
+        schema_type = infer_schema_type(user_query, "ai_agent_platform")
+        competitors_raw = _extract_competitors_from_query(user_query)
+        competitors_dicts = [c.to_dict() for c in competitors_raw]
+
+        return {
+            "inferred_intent": f"竞品分析（规则推断: {schema_type}）",
+            "competitors": competitors_dicts,
+            "schema_type": schema_type,
+            "analysis_dimensions": [],
+            "target_region": target_region,
+            "output_language": detected_language,
+            "confidence_score": 0.3,
+            "warnings": ["LLM unavailable, used rule-based fallback"],
+        }
+
+
+# ---------------------------------------------------------------------------
 # Main Planner Function
 # ---------------------------------------------------------------------------
 
@@ -1534,15 +1854,23 @@ def generate_research_plan(
     project_id: str | None = None,
     detected_language: str = "zh",
     language_config: dict[str, Any] | None = None,
+    explicit_competitors: list[dict[str, Any]] | None = None,
+    skip_outline_generation: bool = False,
 ) -> dict[str, Any]:
     """
     Generate a ResearchPlan from user query.
 
-    Uses LLM when available, falls back to deterministic template.
-    vNext-R1.6: Automatically infers schema_type based on query content.
-    vNext-R3-B: Supports language detection and localized output.
-    Returns a validated ResearchPlan dict.
-    
+    Three paths:
+    1. explicit_competitors + skip_outline: fast path from /analyze review
+       → skip LLM analysis, skip LLM outline, use template structure
+    2. explicit_competitors, no skip_outline: use preview data but generate outline
+       → not used currently, outline always separate
+    3. no explicit_competitors: legacy full analysis path
+       → tries LLM analysis + LLM outline (now both skipped for outline)
+
+    Outline is ALWAYS generated separately by the user via /generate-outline.
+    This function never generates outline anymore.
+
     Args:
         user_query: Natural language research query
         schema_type: Analysis schema type
@@ -1552,19 +1880,82 @@ def generate_research_plan(
         project_id: Optional project ID for trace logging
         detected_language: Detected user language ('zh', 'en', 'mixed')
         language_config: Language-specific configuration for prompts/output
+        explicit_competitors: Pre-analyzed competitor list from /analyze endpoint
+        skip_outline_generation: If True, skip LLM outline generation (always True now)
     """
     # Use default run_id if not provided
     if not run_id:
         run_id = f"pre_run_{generate_id('run')}"
-    
+
     # Use default language config if not provided
     if language_config is None:
         language_config = get_language_config(detected_language)
-    
-    # Infer schema_type based on query content
+
+    # Infer schema_type based on query content (if not already set)
     inferred_schema_type = infer_schema_type(user_query, schema_type)
 
-    # Try LLM first
+    # ── Path A: explicit data from /analyze preview ────────────────────────
+    if explicit_competitors is not None:
+        # Skip LLM analysis — use the preview data the user already reviewed
+        competitors = []
+        for comp in explicit_competitors:
+            if isinstance(comp, dict):
+                competitors.append(CompetitorSpec.from_dict(comp))
+            elif hasattr(comp, 'to_dict'):
+                competitors.append(comp)
+
+        # Deduplicate by name
+        seen = {}
+        for comp in competitors:
+            if comp.name not in seen:
+                seen[comp.name] = comp
+        competitors = list(seen.values())
+
+        # Normalize and filter competitors (remove generic terms)
+        normalized_comps = normalize_competitors(
+            [c.to_dict() if hasattr(c, 'to_dict') else c for c in competitors]
+        )
+
+        fallback_plan = _generate_fallback_plan(
+            user_query, inferred_schema_type, target_region, mode, language_config,
+            skip_outline_generation=True,
+        )
+        fallback_plan["competitors"] = normalized_comps
+        fallback_plan["generated_by"] = "analyze_preview"
+        fallback_plan["generation_metadata"] = {
+            "llm_used": True,
+            "llm_call_succeeded": True,
+            "data_source": "analyze_preview",
+            "fallback_structure_used": True,
+        }
+        fallback_plan["schema_type"] = inferred_schema_type
+        fallback_plan["task_brief"]["project_name"] = _generate_project_name(
+            user_query, normalized_comps, inferred_schema_type
+        )
+
+        # Build SourceDiscovery
+        source_discovery = SourceDiscovery.from_competitors(
+            normalized_comps, schema_type=inferred_schema_type
+        )
+        fallback_plan["source_discovery"] = source_discovery.to_dict()
+
+        # Add research questions
+        research_questions = _generate_research_questions(inferred_schema_type, normalized_comps)
+        fallback_plan["research_questions"] = research_questions
+
+        fallback_plan["language_metadata"] = {
+            "detected_language": detected_language,
+            "output_language": language_config.get("output_language", "中文"),
+        }
+
+        # NOTE: report_outline is intentionally left empty here.
+        # Outline generation is a SEPARATE user-triggered step.
+
+        return fallback_plan
+
+    # ── Path B: no explicit data — run full analysis ─────────────────────────
+    # NOTE: outline generation is always skipped here.
+    # Users generate outline via the separate /generate-outline endpoint after confirming the plan.
     llm_result = _call_llm_for_plan(
         user_query, inferred_schema_type, target_region, mode,
         run_id=run_id, project_id=project_id
@@ -1572,19 +1963,28 @@ def generate_research_plan(
 
     if llm_result:
         # Enhance with structured data from fallback
-        fallback_plan = _generate_fallback_plan(user_query, inferred_schema_type, target_region, mode, language_config)
+        fallback_plan = _generate_fallback_plan(
+            user_query, inferred_schema_type, target_region, mode, language_config,
+            skip_outline_generation=True,
+        )
 
         # Merge LLM result with fallback structure
+        # LLM-identified competitors take priority; fallback fills in missing fields only
         competitors = []
-        for comp in fallback_plan.get("competitors", []):
-            if isinstance(comp, dict):
-                competitors.append(CompetitorSpec.from_dict(comp))
 
-        # If LLM provided competitors, use those too
+        # First: LLM-identified competitors (primary source)
         if llm_result.get("competitors"):
             for comp in llm_result["competitors"]:
                 if isinstance(comp, dict):
                     competitors.append(CompetitorSpec.from_dict(comp))
+
+        # Second: fallback competitors (fill gaps only if LLM found fewer)
+        llm_names_lower = {c.name.lower() for c in competitors}
+        for comp in fallback_plan.get("competitors", []):
+            if isinstance(comp, dict):
+                spec = CompetitorSpec.from_dict(comp)
+                if spec.name.lower() not in llm_names_lower:
+                    competitors.append(spec)
 
         # Deduplicate by name
         seen = {}
@@ -1607,13 +2007,13 @@ def generate_research_plan(
             "fallback_structure_used": True,
             "llm_fields_used": [
                 "objective",
-                "competitor_selection_rationale", 
+                "competitors",
+                "competitor_selection_rationale",
                 "source_plan",
                 "schema_plan",
                 "workflow_plan",
             ],
             "fallback_fields_merged": [
-                "competitors",  # LLM competitors merged with fallback
                 "schema_type",
                 "task_brief",
                 "source_discovery",
@@ -1664,7 +2064,11 @@ def generate_research_plan(
             logger.warning("LLM plan validation failed: %s. Using fallback.", errors)
 
     # Fallback to deterministic plan (LLM not available or failed)
-    fallback_plan = _generate_fallback_plan(user_query, schema_type, target_region, mode, language_config)
+    # Always skip outline generation — outline is always a separate step.
+    fallback_plan = _generate_fallback_plan(
+        user_query, schema_type, target_region, mode, language_config,
+        skip_outline_generation=True,
+    )
     
     # vNext-R2-C: Update generation_metadata for fallback case
     fallback_plan["generation_metadata"] = {
