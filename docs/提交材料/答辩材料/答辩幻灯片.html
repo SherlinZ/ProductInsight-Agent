@@ -1,0 +1,1268 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ProductInsight Agent — 答辩演示 v2.0</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: 'PingFang SC', 'Microsoft YaHei', 'Helvetica Neue', Arial, sans-serif; background: #0a0a1a; color: #e8eaf0; font-size: 18px; overflow: hidden; }
+.slide { display: none; width: 100vw; height: 100vh; padding: 60px 80px; position: relative; overflow: hidden; }
+.slide.active { display: flex; flex-direction: column; }
+.slide-num { position: absolute; bottom: 20px; right: 40px; font-size: 14px; color: #666; }
+.slide-title-bar { position: absolute; top: 0; left: 0; right: 0; height: 4px; background: linear-gradient(90deg, #4f9cf9, #7c3aed, #ec4899); }
+
+.cover { justify-content: center; align-items: center; text-align: center; background: radial-gradient(ellipse at 30% 40%, #1a1a3e 0%, #0a0a1a 70%); }
+.cover h1 { font-size: 3.2em; font-weight: 700; background: linear-gradient(135deg, #4f9cf9, #a78bfa, #ec4899); -webkit-background-clip: text; -webkit-text-fill-color: transparent; margin-bottom: 20px; line-height: 1.3; }
+.cover .subtitle { font-size: 1.5em; color: #a0a8c0; margin-bottom: 40px; letter-spacing: 2px; }
+.cover .tags { display: flex; gap: 16px; justify-content: center; flex-wrap: wrap; margin-bottom: 40px; }
+.tag { padding: 6px 18px; border-radius: 20px; font-size: 0.9em; border: 1px solid; }
+.tag.blue { border-color: #4f9cf9; color: #4f9cf9; }
+.tag.purple { border-color: #a78bfa; color: #a78bfa; }
+.tag.pink { border-color: #ec4899; color: #ec4899; }
+.cover .meta { font-size: 1em; color: #666; margin-top: 20px; }
+
+.content h2 { font-size: 2em; color: #fff; margin-bottom: 36px; padding-bottom: 14px; border-bottom: 2px solid #2a2a4a; }
+.content h3 { font-size: 1.3em; color: #a78bfa; margin: 24px 0 14px; }
+.content p { line-height: 1.8; margin-bottom: 12px; color: #c0c8e0; }
+.content ul { list-style: none; padding: 0; }
+.content ul li { padding: 8px 0 8px 28px; position: relative; line-height: 1.7; color: #c0c8e0; }
+.content ul li::before { content: '▸'; position: absolute; left: 0; color: #4f9cf9; }
+
+.two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; margin-top: 10px; }
+.three-col { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 24px; margin-top: 10px; }
+
+.box { background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08); border-radius: 12px; padding: 20px 24px; }
+.box h4 { color: #4f9cf9; margin-bottom: 10px; font-size: 1.05em; }
+.box p, .box li { font-size: 0.95em; color: #b0b8d0; }
+.box.green { border-color: rgba(34,197,94,0.3); }
+.box.green h4 { color: #22c55e; }
+.box.yellow { border-color: rgba(234,179,8,0.3); }
+.box.yellow h4 { color: #eab308; }
+.box.red { border-color: rgba(239,68,68,0.3); }
+.box.red h4 { color: #ef4444; }
+.box.purple { border-color: rgba(167,139,250,0.3); }
+.box.purple h4 { color: #a78bfa; }
+
+.flow { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 16px 0; font-size: 0.9em; }
+.flow-node { background: linear-gradient(135deg, #1e2a4a, #0f1a30); border: 1px solid #4f9cf9; border-radius: 8px; padding: 8px 16px; color: #4f9cf9; white-space: nowrap; }
+.flow-node.purple { border-color: #a78bfa; color: #a78bfa; }
+.flow-node.green { border-color: #22c55e; color: #22c55e; }
+.flow-node.red { border-color: #ef4444; color: #ef4444; }
+.flow-node.yellow { border-color: #eab308; color: #eab308; }
+.flow-arrow { color: #4a5568; font-size: 1.2em; }
+
+table { width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 0.9em; }
+th { background: rgba(79,156,249,0.15); color: #4f9cf9; padding: 10px 14px; text-align: left; border-bottom: 1px solid rgba(79,156,249,0.3); }
+td { padding: 9px 14px; border-bottom: 1px solid rgba(255,255,255,0.05); color: #b0b8d0; }
+tr:hover td { background: rgba(255,255,255,0.02); }
+td.check { color: #22c55e; font-weight: 600; }
+td.warn { color: #eab308; }
+td.fail { color: #ef4444; }
+
+.hl { color: #4f9cf9; font-weight: 600; }
+.hl-purple { color: #a78bfa; font-weight: 600; }
+.hl-green { color: #22c55e; font-weight: 600; }
+.hl-red { color: #ef4444; font-weight: 600; }
+.hl-yellow { color: #eab308; font-weight: 600; }
+.hl-pink { color: #ec4899; font-weight: 600; }
+
+.terminal { background: #111; border: 1px solid #333; border-radius: 8px; padding: 14px 20px; font-family: 'Courier New', monospace; font-size: 0.85em; color: #22c55e; margin: 12px 0; line-height: 1.6; white-space: pre-wrap; }
+.terminal .prompt { color: #4f9cf9; }
+.terminal .comment { color: #666; }
+
+.nav { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); display: flex; gap: 12px; z-index: 100; }
+.nav button { background: rgba(255,255,255,0.1); color: #fff; border: 1px solid rgba(255,255,255,0.2); padding: 8px 16px; border-radius: 6px; cursor: pointer; font-size: 14px; }
+.nav button:hover { background: rgba(79,156,249,0.3); }
+.nav .progress { font-size: 14px; color: #888; padding: 8px 12px; }
+
+.toc-item { display: flex; align-items: center; padding: 10px 16px; margin: 6px 0; background: rgba(255,255,255,0.03); border-radius: 8px; border-left: 3px solid #4f9cf9; }
+.toc-item .num { color: #4f9cf9; font-weight: 700; margin-right: 12px; min-width: 36px; }
+.toc-item .name { flex: 1; color: #e0e4f0; }
+.toc-item .time { color: #888; font-size: 0.9em; }
+
+.section-divider { justify-content: center; align-items: center; text-align: center; background: radial-gradient(ellipse at 50% 50%, #1a1a3e 0%, #0a0a1a 70%); }
+.section-divider h2 { font-size: 2.5em; background: linear-gradient(135deg, #4f9cf9, #a78bfa); -webkit-background-clip: text; -webkit-text-fill-color: transparent; margin-bottom: 16px; }
+.section-divider .duration { color: #888; font-size: 1.1em; }
+</style>
+</head>
+<body>
+
+<!-- Slide 1: Cover -->
+<div class="slide cover active">
+    <h1>AI 驱动的竞品分析 Agent 协作系统</h1>
+    <div class="subtitle">证据优先 · 多 Agent 协作 · 可信闭环</div>
+    <div class="tags">
+        <span class="tag blue">多 Agent 协作</span>
+        <span class="tag purple">证据优先</span>
+        <span class="tag pink">幻觉抑制</span>
+        <span class="tag blue">可观测工作流</span>
+    </div>
+    <div class="meta">参赛课题：字节跳动 AI 全栈项目挑战</div>
+    <div class="meta">团队：ProductInsight Team</div>
+    <div class="meta">答辩日期：2026 年 6 月 12-19 日</div>
+    <div class="slide-num">1 / 50</div>
+</div>
+
+<!-- Slide 2: 自我介绍 -->
+<div class="slide content">
+    <h2>自我介绍 · 团队分工</h2>
+    <div class="three-col">
+        <div class="box purple">
+            <h4>产品负责人</h4>
+            <p>业务价值、场景落地、答辩话术</p>
+            <p style="margin-top:8px; color:#a78bfa;">产出：场景落地设想.md</p>
+        </div>
+        <div class="box">
+            <h4>架构师</h4>
+            <p>DAG 编排、4 Agent 分工、Schema 体系</p>
+            <p style="margin-top:8px;">产出：backend/app/orchestrator/</p>
+        </div>
+        <div class="box green">
+            <h4>LLM 工程师</h4>
+            <p>6 维评分、3 兜底、Rework 回路</p>
+            <p style="margin-top:8px; color:#22c55e;">产出：evaluator + reviewer + writer</p>
+        </div>
+    </div>
+    <p style="margin-top:30px;">接下来 35 分钟由我主讲，<span class="hl-purple">其他同事会针对具体问题补充</span>。</p>
+    <p style="margin-top:8px; color:#888;">备注：前端工程师负责 13 个视图 + Report Viewer 深度开发，因时间所限不在主讲范围内。</p>
+    <div class="slide-num">2 / 50</div>
+</div>
+
+<!-- Slide 3: 痛点 -->
+<div class="slide content">
+    <h2>问题背景 · 传统竞品分析的四大痛点</h2>
+    <table>
+        <thead><tr><th>痛点</th><th>传统做法</th><th>后果</th></tr></thead>
+        <tbody>
+            <tr><td><span class="hl">信息分散</span></td><td>人工逐个访问竞品官网、文档</td><td>耗时 1-3 天，信息源有限</td></tr>
+            <tr><td><span class="hl-purple">结论难追溯</span></td><td>"我觉得"、"据报道"</td><td>评委质疑可信度</td></tr>
+            <tr><td><span class="hl-red">报告易幻觉</span></td><td>直接让 LLM 生成结论</td><td>无证据支撑，含糊或错误</td></tr>
+            <tr><td><span class="hl-yellow">复核成本高</span></td><td>人工审核，质量参差</td><td>效率低，标准不统一</td></tr>
+        </tbody>
+    </table>
+    <div class="box red" style="margin-top:20px;">
+        <h4>核心数据（业内调研）</h4>
+        <p>• 1 份完整竞品分析：传统 <span class="hl">1-3 人天</span>，分析师时薪 200-500 元</p>
+        <p>• 结论溯源率：~<span class="hl-yellow">30%</span>（靠记忆手动标注）</p>
+        <p>• 报告复用率：&lt; <span class="hl-red">10%</span>（格式依赖个人风格）</p>
+    </div>
+    <div class="slide-num">3 / 50</div>
+</div>
+
+<!-- Slide 4: 解决方案 -->
+<div class="slide content">
+    <h2>解决方案 · 我们的核心思路</h2>
+    <div class="box purple" style="padding:24px;">
+        <h4>核心理念</h4>
+        <p style="font-size:1.1em; line-height:1.8;">
+            <span class="hl">No evidence, no claim.</span> &nbsp;&nbsp;没有证据，不能生成断言。<br>
+            <span class="hl-purple">No schema, no report.</span> &nbsp;&nbsp;没有 Schema 结构，不能出报告。<br>
+            <span class="hl-pink">No review, no publish.</span> &nbsp;&nbsp;没有质检通过，不能发布。
+        </p>
+    </div>
+    <div class="three-col" style="margin-top:24px;">
+        <div class="box green">
+            <h4>效率提升</h4>
+            <p style="font-size:1.8em; color:#22c55e; font-weight:700;">24x</p>
+            <p>1-3 人天 → 30 分钟</p>
+        </div>
+        <div class="box">
+            <h4>溯源率</h4>
+            <p style="font-size:1.8em; color:#4f9cf9; font-weight:700;">100%</p>
+            <p>每条结论绑定 Evidence ID</p>
+        </div>
+        <div class="box purple">
+            <h4>复用率</h4>
+            <p style="font-size:1.8em; color:#a78bfa; font-weight:700;">5x+</p>
+            <p>Schema 切换 + 模板</p>
+        </div>
+    </div>
+    <div class="slide-num">4 / 50</div>
+</div>
+
+<!-- Slide 5: Section Divider 1 -->
+<div class="slide section-divider">
+    <h2>第一章：系统架构总览</h2>
+    <div class="duration">⏱ 4 分钟 · 5 页</div>
+    <div class="slide-num">5 / 50</div>
+</div>
+
+<!-- Slide 6: 4 层架构 -->
+<div class="slide content">
+    <h2>系统架构 · 四层技术栈</h2>
+    <div class="flow" style="flex-direction:column; align-items:stretch; gap:12px;">
+        <div class="box" style="text-align:center;">
+            <h4>用户界面层 (Streamlit)</h4>
+            <p style="font-size:0.9em;">Analysis Flow │ Running Center │ Report Viewer │ Review Center（13 个独立视图，4 个核心页）</p>
+        </div>
+        <div style="text-align:center; color:#4f9cf9;">↓ HTTP REST API</div>
+        <div class="box purple" style="text-align:center;">
+            <h4>后端服务层 (FastAPI 10+ router)</h4>
+            <p style="font-size:0.9em;">research_plans │ projects │ runs │ workflow │ evidence │ reports │ metrics │ human_interventions │ trace │ audit</p>
+        </div>
+        <div style="text-align:center; color:#a78bfa;">↓</div>
+        <div class="box" style="text-align:center;">
+            <h4>Agent 编排层 (LangGraph + 顺序执行兜底)</h4>
+            <p style="font-size:0.9em;">16 步 DAG：4 Agent × 5 模块 × 2 兜底链（4 业务性工作）</p>
+        </div>
+        <div style="text-align:center; color:#ec4899;">↓</div>
+        <div class="box green" style="text-align:center;">
+            <h4>数据与 AI 能力层 (SQLite + 火山方舟 Doubao)</h4>
+            <p style="font-size:0.9em;">30+ 张表 │ 6 维 Evidence 评分 │ PII 脱敏 │ 内容缓存</p>
+        </div>
+    </div>
+    <div class="slide-num">6 / 50</div>
+</div>
+
+<!-- Slide 7: 16 步 DAG -->
+<div class="slide content">
+    <h2>16 步 DAG 全流程（黄金 Demo 实测数据）</h2>
+    <table style="font-size:0.78em;">
+        <thead><tr><th>#</th><th>节点</th><th>角色</th><th>耗时</th><th>关键输出</th></tr></thead>
+        <tbody>
+            <tr><td>1</td><td>build_task_brief</td><td>Orchestrator</td><td>3ms</td><td>TaskBrief</td></tr>
+            <tr><td>2</td><td>plan_schema</td><td>Orchestrator</td><td>15.7s</td><td>6 维度</td></tr>
+            <tr><td>3</td><td>plan_sources</td><td>Orchestrator</td><td>4ms</td><td>10 URL</td></tr>
+            <tr><td>4</td><td>collect_sources</td><td>Collector</td><td><span class="hl">181.7s</span></td><td>8 sources collected</td></tr>
+            <tr><td>5</td><td>evaluate_evidence</td><td>Evaluator</td><td>47ms</td><td>42 evidence items</td></tr>
+            <tr><td>6</td><td>pii_scrub</td><td>Compliance</td><td>3ms</td><td>PII logs</td></tr>
+            <tr><td>7</td><td>extract_facts</td><td>Analyst</td><td>1.0s</td><td>20 facts</td></tr>
+            <tr><td>8</td><td>detect_schema_gaps</td><td>Orchestrator</td><td>4ms</td><td>76 schema gaps</td></tr>
+            <tr><td>9</td><td>analyze_dimensions</td><td>Analyst</td><td>35.9s</td><td>10 claim drafts</td></tr>
+            <tr><td>10</td><td>review_claims</td><td>Reviewer</td><td>247ms</td><td>7 signed + 3 rework</td></tr>
+            <tr><td>11</td><td>execute_rework</td><td>ReworkAgent</td><td>(skipped)</td><td>未触发</td></tr>
+            <tr><td>12</td><td>prepare_human_intervention</td><td>Orchestrator</td><td>3ms</td><td>无</td></tr>
+            <tr><td>13</td><td>write_report_v2</td><td>Writer</td><td><span class="hl-red">1209.1s</span></td><td>11 章节 / 8993 字</td></tr>
+            <tr><td>14</td><td>final_review</td><td>Reviewer</td><td>3ms</td><td>passed</td></tr>
+            <tr><td>15</td><td>export_report</td><td>Writer</td><td>10ms</td><td>md+html+json</td></tr>
+            <tr><td>16</td><td>compute_metrics</td><td>Orchestrator</td><td>5ms</td><td>完整指标</td></tr>
+        </tbody>
+    </table>
+    <p style="margin-top:12px;"><span class="hl">关键洞察</span>：<span class="hl-red">write_report_v2</span> 占 84% 时间 — LLM 重度消耗节点。</p>
+    <div class="slide-num">7 / 50</div>
+</div>
+
+<!-- Slide 8: 4 Agent -->
+<div class="slide content">
+    <h2>四大 Agent 分工 · 专职化不是冗余</h2>
+    <table>
+        <thead><tr><th>Agent</th><th>文件</th><th>行数</th><th>核心职责</th><th>关键工具</th></tr></thead>
+        <tbody>
+            <tr><td><span class="hl">CollectorAgent</span></td><td>agents/collector/</td><td>-</td><td>URL 发现、网页抓取、snippet 抽取</td><td>requests + Playwright + Search API</td></tr>
+            <tr><td><span class="hl-purple">AnalystAgent</span></td><td>analyst/analyst.py</td><td class="hl-purple"><b>735</b></td><td>基于 Evidence 生成 Claim Drafts</td><td>LLM 对比分析</td></tr>
+            <tr><td><span class="hl-red">ReviewerAgent</span></td><td>reviewer/reviewer.py</td><td class="hl-red"><b>785</b></td><td>8 项检查 + Evidence Contract</td><td>结构化 Pydantic</td></tr>
+            <tr><td><span class="hl-pink">WriterAgent</span></td><td>writer/writer.py</td><td class="hl-pink"><b>848</b></td><td>基于 Signed Claims 生成报告</td><td>deep_report.py</td></tr>
+        </tbody>
+    </table>
+    <div class="three-col" style="margin-top:20px;">
+        <div class="box"><h4>职责无重叠</h4><p>通过 WorkflowState TypedDict 消息总线传递数据</p></div>
+        <div class="box purple"><h4>非 function calling</h4><p>用结构化 Pydantic 消息，保证确定性</p></div>
+        <div class="box green"><h4>有 fallback 路径</h4><p>LLM 失败时降级到模板</p></div>
+    </div>
+    <div class="slide-num">8 / 50</div>
+</div>
+
+<!-- Slide 9: 端到端 -->
+<div class="slide content">
+    <h2>端到端链路 · 从输入到报告</h2>
+    <div class="flow" style="flex-direction:column; align-items:stretch; gap:6px;">
+        <div class="flow-node" style="text-align:center;">用户输入（Streamlit）</div>
+        <div style="text-align:center;">↓</div>
+        <div class="flow-node" style="text-align:center;">FastAPI 后端（10+ router，42 endpoint）</div>
+        <div style="text-align:center;">↓</div>
+        <div class="flow-node purple" style="text-align:center;">Orchestrator 启动 16 步 DAG</div>
+        <div style="text-align:center;">↓</div>
+        <div class="flow-node" style="text-align:center;">4 Agent × 5 模块顺序执行</div>
+        <div style="text-align:center;">↓</div>
+        <div class="flow-node green" style="text-align:center;">SQLite 数据库（30+ 张表）</div>
+        <div style="text-align:center;">↓</div>
+        <div class="flow-node purple" style="text-align:center;">报告输出（MD + HTML + JSON，3 份）</div>
+        <div style="text-align:center;">↓</div>
+        <div class="flow-node" style="text-align:center;">前端可视化（13 视图）</div>
+    </div>
+    <div class="three-col" style="margin-top:16px;">
+        <div class="box"><h4>端到端延迟</h4><p><span class="hl">24.5 分钟</span></p><p>写报告 20 + 其他 4</p></div>
+        <div class="box purple"><h4>代码总量</h4><p><span class="hl-purple">nodes.py 5821 行</span></p><p>planner 1899 / evaluator 830</p></div>
+        <div class="box green"><h4>测试覆盖</h4><p><span class="hl-green">133 个用例</span></p><p>16 文件 / 全部 passed</p></div>
+    </div>
+    <div class="slide-num">9 / 50</div>
+</div>
+
+<!-- Slide 10: Section Divider 2 -->
+<div class="slide section-divider">
+    <h2>第二章：核心亮点 1 · 证据优先</h2>
+    <div class="duration">⏱ 5 分钟 · 6 页</div>
+    <div class="slide-num">10 / 50</div>
+</div>
+
+<!-- Slide 11: 6 维评分 -->
+<div class="slide content">
+    <h2>证据评分 · 6 维量化体系</h2>
+    <p style="margin-bottom:16px;">每条 Evidence 在进入 Claims 前必须通过 6 维评分：</p>
+    <table>
+        <thead><tr><th>维度</th><th>权重</th><th>说明</th><th>阈值</th></tr></thead>
+        <tbody>
+            <tr><td><span class="hl">relevance</span></td><td>25%</td><td>产品名 + Schema 关键词匹配</td><td>≥ 0.20</td></tr>
+            <tr><td><span class="hl-purple">authority</span></td><td>20%</td><td>来源类型 + 域名白名单</td><td>-</td></tr>
+            <tr><td><span class="hl-pink">freshness</span></td><td>10%</td><td>30 天内=1.0，2 年+=0.1</td><td>-</td></tr>
+            <tr><td><span class="hl-green">schema_fit</span></td><td>25%</td><td>Schema 关键词命中率</td><td>-</td></tr>
+            <tr><td><span class="hl-yellow">information_density</span></td><td>20%</td><td>长度 + 数字 + 列表 + 噪声惩罚</td><td>-</td></tr>
+            <tr><td><span class="hl-red">final_score</span></td><td>加权和</td><td>6 维加权</td><td class="hl-red"><b>≥ 0.32 才 usable</b></td></tr>
+        </tbody>
+    </table>
+    <div class="terminal">门控条件（必须同时满足）:
+  quality.final_score >= 0.32
+  AND quality.relevance >= 0.20
+  AND quality.schema_fit >= 0.0
+  → usable_for_claim = True</div>
+    <div class="slide-num">11 / 50</div>
+</div>
+
+<!-- Slide 12: 阈值调优 -->
+<div class="slide content">
+    <h2>阈值调优 · 3 轮踩坑故事</h2>
+    <p style="margin-bottom:16px;">初始版本 → 调优过程 → 当前版本：</p>
+    <table>
+        <thead><tr><th>阈值</th><th>初始值</th><th>调优值</th><th>当前值</th><th>调优依据</th></tr></thead>
+        <tbody>
+            <tr><td>FINAL_SCORE_THRESHOLD</td><td>0.45</td><td>0.38</td><td class="hl-green"><b>0.32</b></td><td>短证据（定价引用 50-150 字符）永远过不了门</td></tr>
+            <tr><td>RELEVANCE_THRESHOLD</td><td>0.30</td><td>-</td><td class="hl-green"><b>0.20</b></td><td>中文产品名变体（"扣子"=Coze）匹配率低</td></tr>
+            <tr><td>中文密度加成</td><td>1.0x</td><td>-</td><td class="hl-green"><b>1.15x</b></td><td>中文产品信息密度天然低</td></tr>
+        </tbody>
+    </table>
+    <div class="box yellow" style="margin-top:16px;">
+        <h4>评委可能问：为什么不一步到位调到 0.32？</h4>
+        <p>调优基于 E2E 实测数据：</p>
+        <p>• 0.45 → <span class="hl-red">32%</span> 证据被拒，报告出现"全无证据"空洞</p>
+        <p>• 0.38 → <span class="hl-yellow">18%</span> 证据被拒，仍有过滤</p>
+        <p>• <span class="hl-green">0.32 → 7% 证据被拒</span>，"严格但不僵化"的平衡点</p>
+    </div>
+    <div class="slide-num">12 / 50</div>
+</div>
+
+<!-- Slide 13: 6 种 Schema -->
+<div class="slide content">
+    <h2>Schema 体系 · 6 种动态类型</h2>
+    <table>
+        <thead><tr><th>Schema Type</th><th>维度数</th><th>适用场景</th></tr></thead>
+        <tbody>
+            <tr><td class="hl">ai_agent_platform</td><td>6</td><td>Dify/Coze/FastGPT 等</td></tr>
+            <tr><td class="hl-purple">competitor_landscape</td><td>6</td><td>宽泛竞品对比</td></tr>
+            <tr><td class="hl-pink">pricing_analysis</td><td>6</td><td>定价深度对比</td></tr>
+            <tr><td class="hl-green">knowledge_management</td><td><b>9</b></td><td>Notion/Confluence 等</td></tr>
+            <tr><td class="hl-yellow">ai_coding_assistant</td><td>6</td><td>Cursor/Copilot 等</td></tr>
+            <tr><td class="hl-red">sales_battlecard</td><td>3</td><td>销售话术卡</td></tr>
+        </tbody>
+    </table>
+    <div class="terminal">动态推断逻辑 (infer_schema_type):
+  用户输入: "对比 Dify、Coze、FastGPT 的工作流编排"
+    ↓
+  关键词匹配: dify/coze/rag/workflow
+    ↓
+  → ai_agent_platform (6 维度 + 7 章节模板)
+    ↓
+  自动填充到 plan_schema 节点</div>
+    <p style="margin-top:12px;"><span class="hl-green">实测</span>：6/6 查询命中正确类型（含不在预定义列表的 AskNews/Perplexity）。</p>
+    <div class="slide-num">13 / 50</div>
+</div>
+
+<!-- Slide 14: Evidence Contract -->
+<div class="slide content">
+    <h2>Evidence Contract · 维度门控</h2>
+    <p style="margin-bottom:16px;">每个分析维度有独立的来源白名单规则：</p>
+    <table>
+        <thead><tr><th>维度</th><th class="check">✓ 接受来源</th><th class="fail">✗ 拒绝来源</th></tr></thead>
+        <tbody>
+            <tr><td>pricing_model</td><td>official_pricing_page</td><td>blog、社交媒体</td></tr>
+            <tr><td>function_tree</td><td>documentation、github</td><td>新闻稿</td></tr>
+            <tr><td>enterprise_readiness</td><td>official_website、documentation</td><td>第三方文章</td></tr>
+            <tr><td>model_support</td><td>documentation、官方博客</td><td>论坛帖</td></tr>
+            <tr><td>user_persona</td><td>official_website</td><td>招聘网站</td></tr>
+        </tbody>
+    </table>
+    <div class="box purple" style="margin-top:16px;">
+        <h4>机制含义</h4>
+        <p>• <code>pricing_model</code> claim 必须有 <span class="hl">官方定价页</span> 支撑，否则 <span class="hl-red">拒签</span></p>
+        <p>• <code>user_persona</code> claim 不能用 <span class="hl-red">招聘网站</span> 推断</p>
+        <p>• <b>这是 Reviewer Agent 的硬门控</b> —— 不是建议，是规则</p>
+    </div>
+    <div class="box green" style="margin-top:10px;">
+        <h4>配套：PII 双向防护（两阶段管道）</h4>
+        <p>• <b>阶段 1 · mask_secrets()</b>：先脱敏 API Key（OpenAI <code>sk-</code>、Azure <code>sk--</code>、ARK <code>ark-</code>、Anthropic <code>sk-ant-</code>、Google <code>AIza</code>、AWS <code>AKIA</code>、Bearer Token）</p>
+        <p>• <b>阶段 2 · mask_pii()</b>：再脱敏 PII（邮箱 <code>[EMAIL]</code>、手机 <code>[PHONE]</code>、身份证 <code>[ID_NUMBER]</code>）</p>
+        <p>• <b>报告兜底</b>：<code>sanitize_report_content()</code> 在 PDF 导出前再扫一次，<span class="hl">不残留任何敏感信息</span></p>
+        <p>• 所有检测写入 <code>pii_logs</code> 表，含 <code>risk_level</code> 与 <code>status</code>（passed/masked/blocked）</p>
+    </div>
+    <div class="slide-num">14 / 50</div>
+</div>
+
+<!-- Slide 15: 中文适配 -->
+<div class="slide content">
+    <h2>中文证据适配 · 重要工程细节</h2>
+    <p>项目发现的中文证据质量问题与修复：</p>
+    <table>
+        <thead><tr><th>问题</th><th>表现</th><th>修复</th></tr></thead>
+        <tbody>
+            <tr><td>中文产品名变体</td><td>"扣子" ≠ "Coze"（token 匹配失败）</td><td>改用 substring 匹配（中文占比&gt;30%）</td></tr>
+            <tr><td>字符级 vs 词级</td><td>英文 token 交集 0，中文实际 80% 命中</td><td>字符 substring 统计</td></tr>
+            <tr><td>信息密度天然低</td><td>中文文档通常更长但关键词更分散</td><td class="hl-green">1.15x 长度加成</td></tr>
+            <tr><td>中文停用词过滤</td><td>英文 stopwords 不适用</td><td>中文 ≥20 字 = 有意义</td></tr>
+        </tbody>
+    </table>
+    <div class="box green" style="margin-top:16px;">
+        <h4>实现成果</h4>
+        <p>• Schema 关键词 <span class="hl">40+ 中文</span>（工作流、编排、节点、画布、拖拽等）</p>
+        <p>• 维度关键词：<code>pricing_model</code> → "价格/定价/费用/套餐/订阅"</p>
+        <p>• <b>耗时</b>：Evidence-Sufficiency Sprint 3 天迭代，是项目关键里程碑</p>
+    </div>
+    <div class="slide-num">15 / 50</div>
+</div>
+
+<!-- Slide 16: 章节过渡 -->
+<div class="slide section-divider">
+    <h2>第三章：核心亮点 2 · 多 Agent 闭环</h2>
+    <div class="duration">⏱ 6 分钟 · 6 页</div>
+    <div class="slide-num">16 / 50</div>
+</div>
+
+<!-- Slide 17: 协作机制 -->
+<div class="slide content">
+    <h2>多 Agent 协作机制</h2>
+    <p style="margin-bottom:12px;">为什么用 4 个 Agent，而不是 1 个 LLM 跑完？</p>
+    <table>
+        <thead><tr><th>任务特性</th><th>1 个 LLM</th><th class="hl">4 Agent 协作</th></tr></thead>
+        <tbody>
+            <tr><td>任务类型</td><td>文本生成</td><td class="hl-green"><b>可验证工作流</b></td></tr>
+            <tr><td>可控性</td><td>黑盒</td><td class="hl-green"><b>每步可观测</b></td></tr>
+            <tr><td>错误恢复</td><td>重新生成</td><td class="hl-green"><b>节点级重试</b></td></tr>
+            <tr><td>Token 消耗</td><td>全部塞 1 prompt</td><td class="hl-green"><b>按职责分摊</b></td></tr>
+            <tr><td>报告可信度</td><td>取决于 prompt 技巧</td><td class="hl-green"><b>Reviewer 硬质检</b></td></tr>
+        </tbody>
+    </table>
+    <div class="box purple" style="margin-top:16px;">
+        <h4>核心架构</h4>
+        <p>Hub-and-Spoke + TypedDict 消息总线</p>
+        <p>• 不用 LangGraph 状态机（<span class="hl-red">有 bug</span>，下一节详述）</p>
+        <p>• 用确定性顺序执行 + 消息总线 + DB 状态持久化</p>
+        <p>• 每个 Agent 看到的是 <span class="hl">结构化 WorkflowState</span>，不是自由对话</p>
+    </div>
+    <div class="slide-num">17 / 50</div>
+</div>
+
+<!-- Slide 18: 为什么不用 LangGraph -->
+<div class="slide content">
+    <h2>关键决策 · 为什么不用 LangGraph</h2>
+    <div class="box red" style="padding:20px;">
+        <h4>LangGraph StateGraph 踩坑</h4>
+        <div class="terminal">review_claims 节点执行后
+    ↓
+state["signed_claims"] = [...]  # 写入成功
+    ↓
+write_report 节点读取
+    ↓
+state["signed_claims"] = []  # ❌ 读到空列表
+
+问题根因：LangGraph state 传播机制缺陷（社区 issue 已确认）</div>
+    </div>
+    <p style="margin-top:12px;"><b>决策</b>：改用 <span class="hl">确定性顺序执行</span>（force_sequential=True）</p>
+    <p>保留的能力（核心可观测性）：</p>
+    <div class="two-col">
+        <div class="box">
+            <h4>节点状态记录</h4>
+            <p>每步写入 <code>workflow_nodes</code> 表</p>
+        </div>
+        <div class="box">
+            <h4>断点重跑</h4>
+            <p>从任意节点恢复（<code>/api/runs/{id}/replay</code>）</p>
+        </div>
+        <div class="box">
+            <h4>LLM Trace</h4>
+            <p><code>tracing/llm_trace.py</code> 记录每条 prompt/response</p>
+        </div>
+        <div class="box">
+            <h4>前端 DAG 进度</h4>
+            <p>实时从 DB 读取</p>
+        </div>
+    </div>
+    <div class="box green" style="margin-top:12px;">
+        <p style="font-style:italic;">"我们最初就采用了 LangGraph，但在集成时遇到 state 传播 bug。考虑到 Demo 对稳定性的要求，我们改用顺序执行 + 状态持久化的方案 —— 这不是退而求其次，而是工程上更可控的设计。"</p>
+    </div>
+    <div class="slide-num">18 / 50</div>
+</div>
+
+<!-- Slide 19: 3 条 Rework 回路 -->
+<div class="slide content">
+    <h2>3 条独立反馈回路</h2>
+    <p style="margin-bottom:12px;">每条都有 <code>MAX_ITERATIONS=3</code> 硬上限防循环</p>
+    <div class="box purple" style="margin-bottom:10px;">
+        <h4>闭环 A — 覆盖率迭代</h4>
+        <p><code>coverage_critic → (覆盖率不足) → execute_rework → evaluate_evidence → analyze_dimensions</code></p>
+    </div>
+    <div class="box" style="margin-bottom:10px;">
+        <h4>闭环 B — 声明迭代</h4>
+        <p><code>review_claims → (有 rework) → reflect_on_review → execute_rework → evaluate_evidence</code></p>
+    </div>
+    <div class="box green" style="margin-bottom:10px;">
+        <h4>闭环 C — 报告重写</h4>
+        <p><code>final_review → (rework_required) → write_report_v2 → final_review → export_report</code></p>
+    </div>
+    <table style="margin-top:14px;">
+        <thead><tr><th>回路</th><th>触发条件</th><th>重做节点</th><th>实际触发率</th></tr></thead>
+        <tbody>
+            <tr><td>A</td><td>coverage &lt; 阈值</td><td>collector+evaluator+analyst</td><td>~30%</td></tr>
+            <tr><td>B</td><td>claim 被 Reviewer 拒</td><td>analyst 重写</td><td>~25%</td></tr>
+            <tr><td>C</td><td>final_review 拒</td><td>writer 重写</td><td>~10%</td></tr>
+        </tbody>
+    </table>
+    <div class="slide-num">19 / 50</div>
+</div>
+
+<!-- Slide 20: Before/After -->
+<div class="slide content">
+    <h2>Coze Coverage Gap Rework · Before/After 实测</h2>
+    <table>
+        <thead><tr><th>指标</th><th>Before</th><th class="hl">After</th></tr></thead>
+        <tbody>
+            <tr><td>Sources</td><td>0</td><td class="hl-green"><b>2</b> (+2)</td></tr>
+            <tr><td>Evidence</td><td>0</td><td class="hl-green"><b>5</b> (+5)</td></tr>
+            <tr><td>Facts</td><td>0</td><td class="hl-green"><b>5</b> (+5)</td></tr>
+            <tr><td>Signed Claims</td><td>0</td><td class="hl-green"><b>3</b> (+3)</td></tr>
+            <tr><td>报告状态</td><td><span class="hl-yellow">reviewed_with_gaps</span></td><td><span class="hl-green">reviewed</span> ✅</td></tr>
+        </tbody>
+    </table>
+    <div class="box green" style="margin-top:16px;">
+        <h4>关键意义</h4>
+        <p>• Rework 不是"重新跑一遍" — 是<span class="hl">精确补证</span></p>
+        <p>• Before/After 数据 <span class="hl">真实写库</span>（workflow_tasks 表）</p>
+        <p>• 反馈闭环是 <b>真闭环</b>，不是伪闭环</p>
+    </div>
+    <div class="slide-num">20 / 50</div>
+</div>
+
+<!-- Slide 21: Rework 防循环 -->
+<div class="slide content">
+    <h2>Rework 路由防循环 · v0.3 补丁</h2>
+    <p>Rework 听起来高大上，但工程上最容易掉链子。3 大坑：</p>
+    <div class="box red" style="margin-bottom:10px;">
+        <h4>3 大坑</h4>
+        <p>1. <b>无限循环</b>：旧 rework 不会"老化"，新 rework 不断叠加</p>
+        <p>2. <b>状态污染</b>：pending 和 running 状态混淆</p>
+        <p>3. <b>资源耗尽</b>：没有 retry 上限，OOM 风险</p>
+    </div>
+    <div class="box green">
+        <h4>修复 (v0.3 Step 1 稳定性补丁)</h4>
+        <div class="terminal">def route_after_review():
+    pending_rework = [r for r in rework_queue
+                      if r.status == "pending"
+                      and r.retry_count &lt; MAX_ITERATIONS]
+    for r in pending_rework:
+        r.status = "running"
+        r.retry_count += 1
+    return pending_rework</div>
+    </div>
+    <p style="margin-top:12px; font-style:italic; color:#a78bfa;">"这不是临场 hack，是设计上的防御性编程。"</p>
+    <div class="slide-num">21 / 50</div>
+</div>
+
+<!-- Slide 22: 8 项 Reviewer 检查 -->
+<div class="slide content">
+    <h2>Reviewer Agent · 8 项检查</h2>
+    <p style="margin-bottom:12px;">每条 Claim 必须通过 8 项检查：</p>
+    <table>
+        <thead><tr><th>#</th><th>检查项</th><th>失败原因</th><th>路由到</th></tr></thead>
+        <tbody>
+            <tr><td>1</td><td>evidence_required</td><td>无 evidence_ids</td><td>补证</td></tr>
+            <tr><td>2</td><td>source_diversity</td><td>单一来源</td><td>补证</td></tr>
+            <tr><td>3</td><td>claim_specificity</td><td>模糊断言</td><td>analyst 重写</td></tr>
+            <tr><td>4</td><td>hallucination_containment</td><td>出现"全网最""100%"</td><td>analyst 重写</td></tr>
+            <tr><td>5</td><td>schema_field_complete</td><td>缺 dimension/claim_type</td><td>analyst 重写</td></tr>
+            <tr><td>6</td><td>pii_masked</td><td>检测到 PII</td><td>reviewer 重新脱敏</td></tr>
+            <tr><td>7</td><td>confidence_threshold</td><td>confidence &lt; 0.5</td><td>拒签</td></tr>
+            <tr><td>8</td><td>evidence_contract</td><td>来源不符白名单</td><td>补证</td></tr>
+        </tbody>
+    </table>
+    <div class="box purple" style="margin-top:14px;">
+        <h4>实测数据 (run_2b77aa8121f1452a)</h4>
+        <p>• 10 个 claims 提交</p>
+        <p>• <span class="hl-green">7 个通过 (70%)</span> → signed</p>
+        <p>• <span class="hl-red">3 个 rework_required (30%)</span> → NO_USABLE_EVIDENCE</p>
+    </div>
+    <div class="slide-num">22 / 50</div>
+</div>
+
+<!-- Slide 23: 章节过渡 -->
+<div class="slide section-divider">
+    <h2>第四章：核心亮点 3 · 幻觉抑制</h2>
+    <div class="duration">⏱ 4 分钟 · 5 页</div>
+    <div class="slide-num">23 / 50</div>
+</div>
+
+<!-- Slide 24: 3 层防护 -->
+<div class="slide content">
+    <h2>幻觉抑制 · 三层防护</h2>
+    <div class="box green" style="margin-bottom:14px;">
+        <h4>第 1 层：引用强制</h4>
+        <p>• 报告正文中每条 [E:N] 引用必须在 Evidence Appendix 存在</p>
+        <p>• <code>CitationVerifier</code> 在导出前验证引用编号</p>
+        <p>• <code>Gate-8</code> 阻止引用不存在的 evidence</p>
+    </div>
+    <div class="box purple" style="margin-bottom:14px;">
+        <h4>第 2 层：内部一致性 8 个 Gate</h4>
+        <p>• Gate-1: 产品数量一致性</p>
+        <p>• Gate-2: 定价数字一致性（同一产品前后金额不一致 → 阻断）</p>
+        <p>• Gate-3: 维度对齐</p>
+        <p>• Gate-4: Scorecard 非空 | Gate-5: SWOT 完整性 | Gate-6: 章节结构</p>
+        <p>• Gate-7: POC 优先级合理性 | Gate-8: 引用编号有效性</p>
+    </div>
+    <div class="box">
+        <h4>第 3 层：超长上下文分片（P0-5）</h4>
+        <p>• Evidence 超过 LLM context window 时<span class="hl">自动分批</span></p>
+        <p>• 按 product 分组，<span class="hl">保持相关 evidence 在同一批</span></p>
+        <p>• <b>避免因信息截断导致的幻觉</b></p>
+    </div>
+    <div class="slide-num">24 / 50</div>
+</div>
+
+<!-- Slide 25: 引用编号机制 -->
+<div class="slide content">
+    <h2>引用编号机制 · [E:N] 详解</h2>
+    <div class="terminal">**Dify** 提供 Chatbot、Text Generator、Agent、Chatflow、Workflow
+五大应用构建模块 [E:9]，配套 Dify Marketplace [E:10]，
+并支持 LLM 负载均衡 [E:11]。</div>
+    <table style="font-size:0.85em;">
+        <thead><tr><th>ID</th><th>来源</th><th>URL</th><th>抓取时间</th><th>类型</th><th>信任层</th></tr></thead>
+        <tbody>
+            <tr><td>E:9</td><td>ev_9f529502f74c4794</td><td>dify.ai/pricing</td><td>2026-06-09 16:06:59</td><td>pricing_page</td><td>medium</td></tr>
+            <tr><td>E:10</td><td>ev_0e68ee6d855d4c4e</td><td>dify.ai</td><td>2026-06-09 16:06:59</td><td>official_site</td><td>medium</td></tr>
+            <tr><td>E:11</td><td>ev_be7cf6700eec4e70</td><td>dify.ai/pricing</td><td>2026-06-09 16:06:59</td><td>pricing_page</td><td>medium</td></tr>
+        </tbody>
+    </table>
+    <div class="box green" style="margin-top:14px;">
+        <h4>好处</h4>
+        <p>• 用户点击 <code>[E:N]</code> 直接跳到证据原文</p>
+        <p>• 每条结论都有 URL + 时间戳，<span class="hl">不能"事后补"</span></p>
+        <p>• 引用必须是<span class="hl">抓取时</span>的 evidence，不是临时查的</p>
+    </div>
+    <div class="box purple" style="margin-top:10px;">
+        <h4>报告级一致性 8 Gate（防止章节自相矛盾）</h4>
+        <table style="font-size:0.78em; margin-top:6px;">
+            <thead><tr><th>Gate</th><th>名称</th><th>作用</th></tr></thead>
+            <tbody>
+                <tr><td>Gate-1</td><td>产品范围一致性</td><td>章节产品数 ≠ 报告实际范围 → 阻断</td></tr>
+                <tr><td>Gate-2</td><td>定价一致性</td><td>¥/$ 价格出现，但该产品 <code>pricing_transparency=not_verified</code> → 阻断</td></tr>
+                <tr><td>Gate-3</td><td>证据等级门</td><td>≥90% E 级证据 + 0 个 A/B 级 → 信誉降级</td></tr>
+                <tr><td>Gate-4</td><td>评分卡非空</td><td>推荐锚 0 个 + 模糊标记 &gt;5 → 提示重审</td></tr>
+                <tr><td>Gate-5</td><td>JSON 净化器</td><td>正文出现 <code>[已过滤]</code> 或原始 JSON → 阻断</td></tr>
+                <tr><td>Gate-6</td><td>指标一致性</td><td>summary <code>evidence_coverage_rate</code> 与图表均值偏离 &gt;15% → 阻断</td></tr>
+                <tr><td>Gate-7</td><td>POC 计划门</td><td>POC 计划缺 P0/P1/P2 优先级 → 阻断（产品全 0 覆盖时跳过）</td></tr>
+                <tr><td>Gate-8</td><td>引用解析门</td><td>报告引用 <code>[E1]</code>、<code>[E2]</code> 超出 evidence 总数 → 阻断</td></tr>
+            </tbody>
+        </table>
+        <p style="margin-top:6px; color:#a78bfa; font-style:italic;">—— 实现在 <code>deep_report.py</code> 的 <code>_run_consistency_gates()</code>（约 7000+ 行大文件）</p>
+    </div>
+    <div class="slide-num">25 / 50</div>
+</div>
+
+<!-- Slide 26: 主动阻断 -->
+<div class="slide content">
+    <h2>主动阻断机制 · 不输出误导性报告</h2>
+    <p style="margin-bottom:14px;">当证据不足时，系统<span class="hl">主动阻断</span>，不输出误导性报告：</p>
+    <table>
+        <thead><tr><th>状态</th><th>含义</th><th>触发条件</th></tr></thead>
+        <tbody>
+            <tr><td class="check"><b>reviewed</b></td><td>全部通过，无缺口</td><td>7/7+ claims signed</td></tr>
+            <tr><td class="warn"><b>reviewed_with_gaps</b></td><td>已完成，存在证据缺口</td><td>signed + rework_required 同时存在</td></tr>
+            <tr><td class="fail"><b>blocked</b></td><td>证据严重不足，降级为预评估</td><td>coverage &lt; 30%</td></tr>
+        </tbody>
+    </table>
+    <div class="box yellow" style="margin-top:16px;">
+        <h4>评分卡降级</h4>
+        <p>• 当 coverage &lt; 80% 时，<span class="hl-red">不输出 "35/100" 等误导性综合分</span></p>
+        <p>• 改为四级状态：<span class="hl">Ready / Partial / Needs Verification / No Public Evidence</span></p>
+    </div>
+    <div class="box purple" style="margin-top:12px;">
+        <p style="font-style:italic;">"我们最骄傲的，就是这个主动阻断机制。如果一个产品 evidence 覆盖率 30%，系统不会硬凑出一份看似完整但全是漏洞的报告，而是降级为 '预评估状态'。"</p>
+    </div>
+    <div class="slide-num">26 / 50</div>
+</div>
+
+<!-- Slide 27: 超长分片 -->
+<div class="slide content">
+    <h2>超长上下文分片 · P0-5</h2>
+    <p style="margin-bottom:12px;"><b>问题</b>：当 evidence 超过 LLM context window 会怎样？</p>
+    <div class="box red" style="margin-bottom:14px;">
+        <h4>实测场景</h4>
+        <p>10 个产品 × 30 evidence = 300 条 evidence，每条 ~300 tokens，总 <span class="hl-red">9 万 tokens</span>，远超 8K context</p>
+        <p><b>错误方案</b>：截断（丢失关键信息）→ 必然幻觉</p>
+    </div>
+    <div class="box green">
+        <h4>正确方案 (P0-5)</h4>
+        <div class="terminal">def _chunk_evidence_for_llm(evidence_items, max_tokens=8000):
+    """按 product 分组，保持相关 evidence 在同一批。"""
+    by_product = defaultdict(list)
+    for ev in evidence_items:
+        by_product[ev.product_id].append(ev)
+
+    chunks = []
+    current_chunk, current_tokens = [], 0
+    for product_id, evs in by_product.items():
+        pt = sum(estimate_tokens(e) for e in evs)
+        if current_tokens + pt > max_tokens:
+            chunks.append(current_chunk)
+            current_chunk, current_tokens = [], 0
+        current_chunk.extend(evs)
+        current_tokens += pt
+    return chunks</div>
+    </div>
+    <p style="margin-top:12px;"><b>核心设计</b>：<span class="hl">按 product 分组</span>（不是随机切分）| <span class="hl">保持 schema 维度连贯</span> | <b>无截断</b></p>
+    <div class="slide-num">27 / 50</div>
+</div>
+
+<!-- Slide 28: 业务性工作 -->
+<div class="slide section-divider">
+    <h2>第五章：业务性工作专章</h2>
+    <div class="duration">⏱ 5 分钟 · 5 页</div>
+    <div class="slide-num">28 / 50</div>
+</div>
+
+<!-- Slide 29: 报告升级 -->
+<div class="slide content">
+    <h2>业务性工作 1 · 报告升级 v0 → v1 → v2</h2>
+    <table>
+        <thead><tr><th>版本</th><th>章节数</th><th>字数</th><th>Evidence 利用</th><th>痛点</th></tr></thead>
+        <tbody>
+            <tr><td>v0（基线）</td><td>11</td><td>34321</td><td>27 evidence / 5 维度</td><td>证据利用率 6%</td></tr>
+            <tr><td>v1（升级）</td><td>11</td><td>24500</td><td>35 evidence / 9 维度</td><td>章节重复，仍有冗余</td></tr>
+            <tr><td class="check"><b>v2（黄金）</b></td><td><b>11</b></td><td><b>8993</b></td><td><b>42 evidence / 9 维度</b></td><td>evidence 覆盖率 100%</td></tr>
+        </tbody>
+    </table>
+    <p style="margin-top:14px;"><b>v0 → v2 核心改进</b>：</p>
+    <div class="two-col">
+        <div class="box"><h4>章节深度评分</h4><p>每个章节有 depth_score（0-100），&lt; 50 触发重写</p></div>
+        <div class="box purple"><h4>PII 强制脱敏</h4><p>所有 evidence 过 pii_scrub 节点</p></div>
+        <div class="box green"><h4>比较矩阵独立成节</h4><p>comparison-matrix 不再混在功能树里</p></div>
+        <div class="box yellow"><h4>可信度摘要置顶</h4><p>每份报告开头就有"7 signed + 3 rework"统计</p></div>
+    </div>
+    <div class="slide-num">29 / 50</div>
+</div>
+
+<!-- Slide 30: 链路诊断 -->
+<div class="slide content">
+    <h2>业务性工作 2 · 链路稳定性全面诊断（6月7日）</h2>
+    <table>
+        <thead><tr><th>模块</th><th>状态</th><th>说明</th></tr></thead>
+        <tbody>
+            <tr><td>后端 API</td><td class="check">✅ 健康</td><td>所有 endpoint 响应正常</td></tr>
+            <tr><td>LLM Client（豆包）</td><td class="check">✅ 正常</td><td>chat completions API 可用（14.8s 延迟）</td></tr>
+            <tr><td>搜索 Provider</td><td class="fail">❌ 不可用</td><td>Responses API /responses 超时</td></tr>
+            <tr><td>数据库 (SQLite)</td><td class="check">✅ 正常</td><td>WAL 模式，并发安全</td></tr>
+            <tr><td>前端 (Streamlit)</td><td class="check">✅ 正常</td><td>页面可访问，代理正常</td></tr>
+        </tbody>
+    </table>
+    <p style="margin-top:14px;"><b>本次发现的 3 个真实 Bug</b>：</p>
+    <div class="box red" style="margin-bottom:6px;">
+        <p><b>Bug 1</b>: create_run 产品格式不兼容 → 字符串/对象双重支持</p>
+    </div>
+    <div class="box yellow" style="margin-bottom:6px;">
+        <p><b>Bug 2</b>: logger UnboundLocalError → 统一改 _logger（5 处）</p>
+    </div>
+    <div class="box" style="margin-bottom:6px;">
+        <p><b>Bug 3</b>: build_task_brief 字符串产品崩溃 → 字符串规范化</p>
+    </div>
+    <p style="margin-top:8px; color:#a78bfa; font-style:italic;">这种端到端诊断文档 = 工程化治理的范例</p>
+    <div class="box red" style="margin-top:14px;">
+        <h4>更深的踩坑：6 Bug 堆栈（2026-06-03 Evidence-Sufficiency Sprint）</h4>
+        <p style="margin-bottom:6px;">系统一度 <b>永远输出 blocked 预评估报告</b>，调查发现是 6 个 Bug 同时叠加：</p>
+        <table style="font-size:0.78em;">
+            <thead><tr><th>Bug</th><th>症状</th><th>根因</th></tr></thead>
+            <tbody>
+                <tr><td>A</td><td>中文 evidence 全部 0.1 分</td><td>特征词列表只有英文</td></tr>
+                <tr><td>B</td><td>业务价值被误归类到 pricing 后被门控拒</td><td>"cost"/"enterprise" 在多维关键词冲突</td></tr>
+                <tr><td>C</td><td><code>review_claims</code> 过滤后未写回 state</td><td><code>filtered_evidence_ids</code> 内部用但未持久化</td></tr>
+                <tr><td>D</td><td>未定义维度的 web_page 全被拒</td><td>空 allowlist <code>[]</code> 误判为 truthy</td></tr>
+                <tr><td>E</td><td>E2E 覆盖率全 0</td><td>claim 缺 <code>run_id</code> 字段 → product 提取失败</td></tr>
+                <tr><td>F</td><td>旧 DB evidence 用新规则评 0.1</td><td>未对历史 evidence 重评</td></tr>
+            </tbody>
+        </table>
+        <p style="margin-top:6px;"><b>结果</b>：usable evidence 15/39 → 26/39（+11），覆盖率 <span class="hl-green">83.3%</span>。—— 单 bug 不致命，叠加必翻车；这就是 E2E 链路诊断的不可替代性。</p>
+    </div>
+    <div class="slide-num">30 / 50</div>
+</div>
+
+<!-- Slide 31: 未知产品兜底 -->
+<div class="slide content">
+    <h2>业务性工作 3 · 未知产品的多层兜底</h2>
+    <p style="margin-bottom:12px;"><b>业务痛点</b>：用户懒得填 URL 怎么办？</p>
+    <p style="margin-bottom:12px;"><b>实测场景</b>：让系统分析"AskNews + Perplexity"（均不在预定义列表）</p>
+    <div class="terminal">4 级兜底链:
+
+① Doubao Web Search
+    ↓ 超时（火山引擎不稳定）
+② DuckDuckGo（免费，无需配置）✅
+    ↓ 国内访问可能慢
+③ LLM Inference（用模型知识推断 URL）✅
+    ↓
+④ Seed URLs（已知产品用预定义 URL）✅
+    ↓
+⑤ Fixture（万不得已的静态数据）✅</div>
+    <table>
+        <thead><tr><th>产品</th><th>DuckDuckGo 发现</th><th>URL</th></tr></thead>
+        <tbody>
+            <tr><td>AskNews</td><td class="check">✅</td><td>asknews.app, asknews.ai/docs</td></tr>
+            <tr><td>Perplexity</td><td class="check">✅</td><td>perplexity.ai, perplexitycn.com</td></tr>
+            <tr><td>AutoQL</td><td class="check">✅</td><td>autoql.com, npm (次要)</td></tr>
+            <tr><td>Dify</td><td class="check">✅</td><td>dify.ai</td></tr>
+            <tr><td>Coze</td><td class="check">✅</td><td>coze.cn, coze.cn/docs</td></tr>
+        </tbody>
+    </table>
+    <p style="margin-top:8px; color:#22c55e;">最坏情况：DuckDuckGo 也超时 → <b>系统主动暂停等待用户补充 URL</b>，不崩溃。</p>
+    <div class="slide-num">31 / 50</div>
+</div>
+
+<!-- Slide 32: Schema 适配 -->
+<div class="slide content">
+    <h2>业务性工作 4 · 6 种 Schema 动态适配</h2>
+    <p style="margin-bottom:12px;"><b>业务痛点</b>：竞品类型多种多样（Agent 平台、IDE、知识管理、CRM...），不能 hardcode</p>
+    <div class="terminal"># backend/app/services/research_planner.py:1058-1129
+def infer_schema_type(query: str) -> str:
+    if "notion/confluence/coda" in query:
+        return "knowledge_management"  # 9 维度
+    if "cursor/copilot/windsurf" in query:
+        return "ai_coding_assistant"  # 6 维度
+    if "dify/coze/rag/workflow" in query:
+        return "ai_agent_platform"  # 6 维度
+    # ...</div>
+    <p style="margin-top:12px;"><b>6 个不同查询的 schema 推断实测</b>：</p>
+    <table>
+        <thead><tr><th>查询</th><th>推断出 schema_type</th><th>维度数</th><th>章节数</th></tr></thead>
+        <tbody>
+            <tr><td>Dify + Coze</td><td>ai_agent_platform ✅</td><td>6</td><td>7</td></tr>
+            <tr><td>AskNews + Perplexity</td><td>competitor_landscape ✅</td><td>6</td><td>3</td></tr>
+            <tr><td>Notion + Confluence</td><td>knowledge_management ✅</td><td>9</td><td>12</td></tr>
+            <tr><td>Cursor + Copilot</td><td>ai_coding_assistant ✅</td><td>6</td><td>7</td></tr>
+        </tbody>
+    </table>
+    <p style="margin-top:8px; color:#eab308;">发现 1 个 Bug：Slack + Teams 误判为 pricing_analysis — <b style="color:#a78bfa;">主动暴露问题，说明工程透明度高</b></p>
+    <div class="slide-num">32 / 50</div>
+</div>
+
+<!-- Slide 33: 演示录制 / 落地 -->
+<div class="slide content">
+    <h2>业务性工作 5 · 演示录制与场景落地</h2>
+    <div class="two-col">
+        <div class="box">
+            <h4>演示录制（演示录制指南.md）</h4>
+            <p>• 8 步走位脚本（scripts/DEMO_WALKTHROUGH.md）</p>
+            <p>• 34 项验证清单（scripts/verify_demo.py）</p>
+            <p>• 应急处理（流卡、500、报告打不开）</p>
+            <p>• 风险预案（replay vs real_time）</p>
+        </div>
+        <div class="box green">
+            <h4>场景落地（3 阶段）</h4>
+            <p>• <b>近期（1-3 月）</b>：字节 CIS 部门试点</p>
+            <p>• <b>中期（3-6 月）</b>：企业内部扩展</p>
+            <p>• <b>长期（6-12 月）</b>：外部 SaaS 化</p>
+            <p>• KPI：日活 &gt; 20、NPS &gt; 40、复用率 &gt; 50%</p>
+        </div>
+    </div>
+    <div class="box purple" style="margin-top:12px;">
+        <h4>3 类目标客户</h4>
+        <p>• <b>企业产品团队</b>：立项前调研、迭代方向决策、定价策略调整</p>
+        <p>• <b>投资机构/行业研究员</b>：快速了解赛道、生成结构化对比材料</p>
+        <p>• <b>SaaS/企业软件销售团队</b>：客户交流前快速生成竞品对比</p>
+    </div>
+    <div class="slide-num">33 / 50</div>
+</div>
+
+<!-- Slide 34: 工程化治理 -->
+<div class="slide section-divider">
+    <h2>第六章：工程化治理专章</h2>
+    <div class="duration">⏱ 4 分钟 · 4 页</div>
+    <div class="slide-num">34 / 50</div>
+</div>
+
+<!-- Slide 35: v0.3 补丁 -->
+<div class="slide content">
+    <h2>工程化治理 · v0.3 Step 1 稳定性补丁（8 项）</h2>
+    <table style="font-size:0.82em;">
+        <thead><tr><th>#</th><th>补丁</th><th>修复问题</th><th>影响</th></tr></thead>
+        <tbody>
+            <tr><td>1</td><td>Writer fallback 修复</td><td>补 import re / _render_key_findings()</td><td>LLM 不可用时仍可生成报告</td></tr>
+            <tr><td>2</td><td>Trace/Message 审计账本</td><td>_wrap_node() 节点包装器</td><td>写 trace_logs + messages</td></tr>
+            <tr><td>3</td><td>Rework 路由防循环</td><td>route_after_review() 防无限循环</td><td>retry_count 限制</td></tr>
+            <tr><td>4</td><td>PII Scrub 节点接入</td><td>pii_scrub() 不再是空节点</td><td>写 pii_logs</td></tr>
+            <tr><td>5</td><td>EvidenceExtractor PII 保留</td><td>新增 detected_pii_types 字段</td><td>pii_scrub 复用</td></tr>
+            <tr><td>6</td><td>报告导出自动生成 HTML</td><td>export_report() 同步写 MD/HTML</td><td>路径回写 DB</td></tr>
+            <tr><td>7</td><td>Run 状态生命周期</td><td>RunRepository.update_status() 维护 4 字段</td><td>失败时标 failed</td></tr>
+            <tr><td>8</td><td>Report 阻断规则收窄</td><td>4 类关键错误才 blocked</td><td>减少误阻断</td></tr>
+        </tbody>
+    </table>
+    <div class="box green" style="margin-top:14px;">
+        <h4>业务价值</h4>
+        <p>• <b>冷启动 demo run 0 崩溃</b>（无外网 + LLM 失败场景下仍可完成）</p>
+        <p>• <b>真实审计数据</b>（trace_logs / messages / pii_logs 三表全填）</p>
+        <p>• <b>失败可重试</b>（不是死锁式 failed）</p>
+    </div>
+    <div class="slide-num">35 / 50</div>
+</div>
+
+<!-- Slide 36: 报告重构 -->
+<div class="slide content">
+    <h2>工程化治理 · 报告渲染重构 TODO</h2>
+    <p style="margin-bottom:12px;"><b>当前痛点</b>（主动暴露技术债）：</p>
+    <table>
+        <thead><tr><th>痛点</th><th>现状</th><th>影响</th></tr></thead>
+        <tbody>
+            <tr><td>export_report() 职责过重</td><td>section/matrix/quality/HTML/DB 写盘 5 件事</td><td>难维护</td></tr>
+            <tr><td>Markdown 表格用 regex</td><td>不是 robust 解析</td><td>偶发渲染失败</td></tr>
+            <tr><td>报告话术不够"商业"</td><td>LLM 模板化</td><td>客户体验差</td></tr>
+            <tr><td>Evidence Appendix 不独立</td><td>嵌在章节里</td><td>难复用</td></tr>
+            <tr><td>sources_map 经常空</td><td>evidence → report 关联弱</td><td>溯源断开</td></tr>
+            <tr><td>HTML 跨模块 import</td><td>依赖 generate_html_report.py</td><td>紧耦合</td></tr>
+        </tbody>
+    </table>
+    <div class="box purple" style="margin-top:14px;">
+        <h4>重构方向（已规划）</h4>
+        <div class="terminal">backend/app/services/
+  report_section_builder.py    # 业务化拆分
+  comparison_matrix_builder.py
+  quality_summary_builder.py
+  report_renderer.py            # 纯函数，无 I/O
+  evidence_appendix_builder.py</div>
+    </div>
+    <p style="margin-top:10px; color:#a78bfa; font-style:italic;">承认技术债，但强调：1) demo 场景 functional 足够；2) 重构计划已写好；3) 知道问题 = 工程化治理能力。</p>
+    <div class="slide-num">36 / 50</div>
+</div>
+
+<!-- Slide 37: 测试覆盖 -->
+<div class="slide content">
+    <h2>工程化治理 · 16 个测试用例</h2>
+    <table style="font-size:0.78em;">
+        <thead><tr><th>测试文件</th><th>验证目标</th><th>用例数</th></tr></thead>
+        <tbody>
+            <tr><td>test_workflow_graph.py</td><td>16 步 DAG 编排正确性</td><td>13</td></tr>
+            <tr><td>test_workflow_api.py</td><td>workflow API endpoint</td><td>8</td></tr>
+            <tr><td>test_research_plan.py</td><td>研究计划生成</td><td>6</td></tr>
+            <tr><td>test_research_planner.py</td><td>Schema 推断</td><td>9</td></tr>
+            <tr><td>test_research_plan_to_run_e2e.py</td><td>计划 → Run 端到端</td><td>5</td></tr>
+            <tr><td>test_evidence_evaluator.py</td><td>6 维评分</td><td>11</td></tr>
+            <tr><td>test_rework_service.py</td><td>Rework 路由</td><td>7</td></tr>
+            <tr><td>test_rework_status.py</td><td>Rework 状态机</td><td>4</td></tr>
+            <tr><td>test_human_interventions.py</td><td>人工干预</td><td>6</td></tr>
+            <tr><td>test_schema_gap_planner.py</td><td>Schema 缺口检测</td><td>8</td></tr>
+            <tr><td>test_agent_trace.py</td><td>Agent Trace</td><td>5</td></tr>
+            <tr><td>test_llm_trace.py</td><td>LLM 调用追踪</td><td>4</td></tr>
+            <tr><td>test_llm_status_api.py</td><td>LLM 状态 API</td><td>3</td></tr>
+            <tr><td>test_report_outline_integration.py</td><td>报告大纲集成</td><td>5</td></tr>
+            <tr><td>test_vnext_r2d_patch.py</td><td>报告 v2 patch</td><td>4</td></tr>
+            <tr><td>test_search_provider.py</td><td>搜索 Provider 兜底</td><td>5</td></tr>
+        </tbody>
+    </table>
+    <div class="box green" style="margin-top:14px;">
+        <h4>测试总数</h4>
+        <p><span class="hl-green"><b>16 个文件 / 133 个用例 / 全部 passed</b></span></p>
+        <p>（6 月 7 日链路诊断报告为证）</p>
+    </div>
+    <div class="slide-num">37 / 50</div>
+</div>
+
+<!-- Slide 38: 章节过渡 -->
+<div class="slide section-divider">
+    <h2>第七章：现场演示（重头戏）</h2>
+    <div class="duration">⏱ 8 分钟 · 4 页</div>
+    <div class="slide-num">38 / 50</div>
+</div>
+
+<!-- Slide 39: 演示走位 -->
+<div class="slide content">
+    <h2>现场演示 · Golden Run 走位</h2>
+    <p style="margin-bottom:14px;"><b>演示数据</b>：<code>run_2b77aa8121f1452a</code>（4 产品 / 24.5 分钟 / 7 signed + 3 rework / 11 章节 / 8993 字）</p>
+    <table>
+        <thead><tr><th>步骤</th><th>页面</th><th>重点说明</th><th>耗时</th></tr></thead>
+        <tbody>
+            <tr><td>1. 报告总览</td><td>Report Viewer</td><td>7 signed + 3 rework / 4 products / 11 sections</td><td>1.5 分钟</td></tr>
+            <tr><td>2. 16 步 DAG</td><td>Workflow Viz</td><td>16 节点全完成 + 1 pending (execute_rework)</td><td>2 分钟</td></tr>
+            <tr><td>3. 证据溯源</td><td>Evidence Appendix</td><td>点击 [E:N] → 跳转原文 URL</td><td>1.5 分钟</td></tr>
+            <tr><td>4. 反馈闭环</td><td>Reviews Table</td><td>3 个 rework_required + reason_code</td><td>3 分钟</td></tr>
+        </tbody>
+    </table>
+    <div class="terminal">演示前 5 分钟必做:
+$ cd /home/shijialin/paperworking/workflow_new/productinsight-agent
+$ python3 scripts/verify_demo.py
+# 预期：34/34 checks passed 🎉</div>
+    <p style="margin-top:10px; color:#a78bfa; font-style:italic;">如遇意外：DEMO_WALKTHROUGH.md 有完整应急处理</p>
+    <div class="slide-num">39 / 50</div>
+</div>
+
+<!-- Slide 40: 报告讲解 -->
+<div class="slide content">
+    <h2>演示步骤 1 · Report Viewer 重点讲解</h2>
+    <div class="box purple" style="padding:20px;">
+        <h4>讲解话术</h4>
+        <p style="line-height:1.8;">
+        "这是 v2.0 报告，<span class="hl">11 个章节，8993 字，引用 42 条证据</span>，覆盖 4 个产品。"<br><br>
+        "<b>关键数字</b>：候选 Claim 总数 10 条，<span class="hl-green">已签发 7 条</span>（全部 Reviewer 正式签署），<span class="hl-red">需返工 3 条</span>（因 evidence usable_for_claim=False 被 hard-gate 拒绝）。"<br><br>
+        "<b>产品覆盖度</b>：Dify、FastGPT 是 Sufficient（充分覆盖），Coze、Flowise 是 Partial（部分覆盖） — <span class="hl">这是诚实标识</span>，不是'为了好看'而虚构数据。"<br><br>
+        "<b>6 个产品维度</b>：Dify function_tree、FastGPT function_tree、FastGPT enterprise_readiness、FastGPT user_persona、Flowise pricing_model、Coze user_persona。"
+        </p>
+    </div>
+    <p style="margin-top:14px; color:#eab308;"><b>重点强调</b>：3 条 rework 不是 bug，是设计行为。</p>
+    <div class="slide-num">40 / 50</div>
+</div>
+
+<!-- Slide 41: 16 步 DAG -->
+<div class="slide content">
+    <h2>演示步骤 2 · 16 步 DAG 可视化</h2>
+    <div class="box purple" style="padding:20px;">
+        <h4>讲解话术</h4>
+        <p>"这是系统最核心的创新 — <span class="hl-purple">16 步可观测 DAG</span>。"</p>
+        <p>"<b>从左到右</b>：</p>
+        <p>1. 任务规划：build_task_brief → plan_schema → plan_sources</p>
+        <p>2. 数据采集：collect_sources → evaluate_evidence → pii_scrub</p>
+        <p>3. 分析：extract_facts → detect_schema_gaps → analyze_dimensions</p>
+        <p>4. 审核：review_claims → execute_rework（pending，本次无 rework）</p>
+        <p>5. 报告：prepare_human_intervention → write_report_v2 → final_review</p>
+        <p>6. 收尾：export_report → compute_metrics"</p>
+    </div>
+    <div class="three-col" style="margin-top:12px;">
+        <div class="box"><h4>write_report_v2</h4><p style="font-size:1.4em; color:#ef4444;"><b>20 分钟</b></p><p>占总 84%</p></div>
+        <div class="box purple"><h4>其他 15 步</h4><p style="font-size:1.4em; color:#4f9cf9;"><b>4 分钟</b></p><p>合计</p></div>
+        <div class="box green"><h4>Pending</h4><p style="font-size:1.4em; color:#22c55e;"><b>1</b></p><p>execute_rework（正常）</p></div>
+    </div>
+    <p style="margin-top:8px; color:#a78bfa; font-style:italic;">现场操作：点击任一节点 → 看到 status / latency_ms / started_at，强调"每步都有真实数据，不是写死的 mock"。</p>
+    <div class="slide-num">41 / 50</div>
+</div>
+
+<!-- Slide 42: 证据溯源 + 反馈闭环 -->
+<div class="slide content">
+    <h2>演示步骤 3+4 · 证据溯源 + 反馈闭环</h2>
+    <div class="two-col">
+        <div class="box green">
+            <h4>证据溯源</h4>
+            <p>"点击这条 <code>[E:9]</code> — 跳转到 <code>ev_9f529502f74c4794</code>"</p>
+            <p>证据含：</p>
+            <p>• 来源 URL <code>https://dify.ai/pricing</code></p>
+            <p>• 抓取时间 <code>2026-06-09 16:06:59</code></p>
+            <p>• 来源类型 <code>pricing_page</code></p>
+            <p>• 信任层 <code>medium</code></p>
+            <p>• 6 维评分（relevance=0.25, authority=0.88）</p>
+            <p style="margin-top:8px;"><span class="hl">可溯源 = 评委可以点回去看</span></p>
+        </div>
+        <div class="box red">
+            <h4>反馈闭环</h4>
+            <p>"这是 Reviews 表，<span class="hl">10 条记录</span>。"</p>
+            <p>• <span class="hl-green">7 条 pass</span>（Reviewer 通过）</p>
+            <p>• <span class="hl-red">3 条 rework_required</span></p>
+            <p>• reason_code: <code>NO_USABLE_EVIDENCE</code></p>
+            <p>被拒的 3 条 claim：</p>
+            <p>• <code>claim_..._dify_function_tree_0</code></p>
+            <p>• <code>claim_..._flowise_function_tree_0</code></p>
+            <p>• <code>claim_..._flowise_enterprise_readiness_0</code></p>
+            <p style="margin-top:8px;"><b>没有证据支撑的，宁可不要。</b></p>
+        </div>
+    </div>
+    <div class="slide-num">42 / 50</div>
+</div>
+
+<!-- Slide 43: 业务价值 -->
+<div class="slide section-divider">
+    <h2>第八章：业务价值与场景落地</h2>
+    <div class="duration">⏱ 3 分钟 · 3 页</div>
+    <div class="slide-num">43 / 50</div>
+</div>
+
+<!-- Slide 44: 量化数据 -->
+<div class="slide content">
+    <h2>业务价值 · 24x 效率提升的可量化数据</h2>
+    <table>
+        <thead><tr><th>维度</th><th>传统方法</th><th>我们的系统</th><th>提升</th></tr></thead>
+        <tbody>
+            <tr><td>单次分析耗时</td><td>1-3 人天</td><td class="hl-green">24.5 分钟</td><td class="hl-green"><b>24x-180x</b></td></tr>
+            <tr><td>信息源数量</td><td>5-8 个</td><td>50+ 个</td><td>6x-10x</td></tr>
+            <tr><td>结论溯源率</td><td>~30%（靠记忆）</td><td>100%（自动绑定）</td><td>3.3x</td></tr>
+            <tr><td>报告格式一致性</td><td>依赖个人风格</td><td>100% Schema 约束</td><td>—</td></tr>
+            <tr><td>同赛道复用性</td><td>&lt; 10%</td><td>Schema 切换 6 种</td><td>5x</td></tr>
+        </tbody>
+    </table>
+    <div class="box green" style="margin-top:14px;">
+        <h4>业务量级</h4>
+        <p>• 1 个产品经理时薪 ~200 元</p>
+        <p>• 1 次分析节省 2 人天 = 节省 <span class="hl">3,200 元</span></p>
+        <p>• 1 个团队 1 年 50 次分析 = 节省 <span class="hl-green"><b>16 万元</b></span></p>
+    </div>
+    <div class="box purple" style="margin-top:10px;">
+        <h4>关键成功指标（参赛队内部目标）</h4>
+        <p>✅ 报告生成时间：30 分钟系统 + 1 小时审核</p>
+        <p>✅ 引用溯源覆盖率：&gt; 80%</p>
+        <p>✅ 报告版本一致性：标准化结构，可横向对比</p>
+    </div>
+    <div class="slide-num">44 / 50</div>
+</div>
+
+<!-- Slide 45: 3 类客户 -->
+<div class="slide content">
+    <h2>3 类目标客户</h2>
+    <div class="three-col">
+        <div class="box">
+            <h4>企业产品团队 (PM)</h4>
+            <p><b>场景</b>：新产品立项前的市场调研</p>
+            <p><b>痛点</b>：1-3 天调研；团队各自搜；个人经验</p>
+            <p><b>价值</b>：30 分钟系统 + 1 小时审核；标准化输出</p>
+        </div>
+        <div class="box purple">
+            <h4>投资机构 / 行业研究</h4>
+            <p><b>场景</b>：快速了解赛道竞品格局</p>
+            <p><b>痛点</b>：信息源分散（官网/文档/社区/财报）；需要结构化材料</p>
+            <p><b>价值</b>：自动抓取多源；竞品对象快速切换；维度一致</p>
+        </div>
+        <div class="box green">
+            <h4>SaaS / 企业软件销售</h4>
+            <p><b>场景</b>：售前交流前快速了解竞品</p>
+            <p><b>痛点</b>：临时搜集资料；信息不系统</p>
+            <p><b>价值</b>：战前快速生成竞品对比；<code>sales_battlecard</code> schema 已实现</p>
+        </div>
+    </div>
+    <div class="box yellow" style="margin-top:12px;">
+        <h4>3 阶段落地路径</h4>
+        <p>• <b>近期 (1-3 月)</b>：字节跳动 CIS 部门试点 — 验证 KPI</p>
+        <p>• <b>中期 (3-6 月)</b>：多租户 + 私有化 + 内部知识库 — 日活&gt;20/NPS&gt;40</p>
+        <p>• <b>长期 (6-12 月)</b>：外部 SaaS 化 — 订阅制 + 行业模板市场</p>
+    </div>
+    <div class="slide-num">45 / 50</div>
+</div>
+
+<!-- Slide 46: 总结 -->
+<div class="slide section-divider">
+    <h2>第九章：总结 + 评分自评</h2>
+    <div class="duration">⏱ 2 分钟 · 3 页</div>
+    <div class="slide-num">46 / 50</div>
+</div>
+
+<!-- Slide 47: 三大支柱 -->
+<div class="slide content">
+    <h2>总结 · 三大支柱</h2>
+    <div class="box purple" style="padding:30px; text-align:center; margin-bottom:20px;">
+        <h4>核心理念</h4>
+        <p style="font-size:1.6em; line-height:2; margin-top:12px;">
+            "系统不会编造它不知道的东西。"
+        </p>
+    </div>
+    <div class="three-col">
+        <div class="box">
+            <h4>1. 证据优先</h4>
+            <p style="color:#4f9cf9;"><code>No evidence, no claim.</code></p>
+            <p style="margin-top:8px;">6 维评分 + Evidence Contract + 3 阈值调优</p>
+        </div>
+        <div class="box purple">
+            <h4>2. 可信闭环</h4>
+            <p style="color:#a78bfa;"><code>No review, no publish.</code></p>
+            <p style="margin-top:8px;">3 条 Rework 回路 + 8 项 Reviewer 检查 + Before/After 写库</p>
+        </div>
+        <div class="box green">
+            <h4>3. 主动阻断</h4>
+            <p style="color:#22c55e;"><code>No schema, no report.</code></p>
+            <p style="margin-top:8px;">blocked 降级 + 评分卡降级 + 报告状态分级</p>
+        </div>
+    </div>
+    <div class="slide-num">47 / 50</div>
+</div>
+
+<!-- Slide 48: 评分对齐 -->
+<div class="slide content">
+    <h2>评分自评 · 5 维对齐</h2>
+    <table>
+        <thead><tr><th>评分维度</th><th>权重</th><th>自评</th><th>关键证据</th></tr></thead>
+        <tbody>
+            <tr><td>多 Agent 协作与输出可信度</td><td>35%</td><td class="check"><b>强对齐 ✅</b></td><td>4 Agent + 16 步 DAG + 3 条 Rework + Evidence Contract</td></tr>
+            <tr><td>技术深度与工程完整度</td><td>25%</td><td class="check"><b>强对齐 ✅</b></td><td>引用强制 + 8 Gate + 上下文分片 + 可观测</td></tr>
+            <tr><td>业务价值与产品体验</td><td>20%</td><td class="check"><b>强对齐 ✅</b></td><td>24x 提速 + 6 类客户 + 3 阶段落地</td></tr>
+            <tr><td>代码质量与文档</td><td>10%</td><td class="warn"><b>中强对齐 ⚠️</b></td><td>133 测试 / 16 文档 / Git 提交规范化</td></tr>
+            <tr><td>合规、材料与答辩</td><td>10%</td><td class="check"><b>强对齐 ✅</b></td><td>PII 脱敏 + robots 合规 + 50 页专业答辩稿</td></tr>
+        </tbody>
+    </table>
+    <div class="box green" style="margin-top:14px;">
+        <h4>综合结论</h4>
+        <p>• <b>多 Agent 协作 (35%)</b> + <b>技术深度 (25%)</b> + <b>业务价值 (20%)</b> = <span class="hl-green">80% 强对齐</span></p>
+        <p>• 代码质量 10% 中强对齐（Git 提交规范化细节可在答辩中口述补充）</p>
+        <p>• 合规 + 答辩 10% 强对齐（本文档 + 13 份支撑文档）</p>
+    </div>
+    <div class="slide-num">48 / 50</div>
+</div>
+
+<!-- Slide 49: 结束语 -->
+<div class="slide cover">
+    <h1>感谢评委老师</h1>
+    <div class="subtitle">Q&A 环节 10 分钟</div>
+    <div class="tags">
+        <span class="tag blue">12+ Q&A 速查</span>
+        <span class="tag purple">可现场演示</span>
+        <span class="tag pink">可被验证</span>
+    </div>
+    <div class="meta" style="margin-top:40px;">
+        ProductInsight Agent — 证据优先的多 Agent 协作竞品分析工作台
+    </div>
+    <div class="meta">如有 Q&A，我们已准备好 12+ 高频问题速查表</div>
+    <div class="slide-num">49 / 50</div>
+</div>
+
+<!-- Slide 50: Q&A 速查 -->
+<div class="slide content">
+    <h2>Q&A 速查 · 12+ 高频问题</h2>
+    <table style="font-size:0.78em;">
+        <thead><tr><th>#</th><th>问题</th><th>答案要点</th></tr></thead>
+        <tbody>
+            <tr><td>1</td><td>幻觉抑制具体怎么做？</td><td>引用强制 + 8 Gate + 超长分片（第 24 页）</td></tr>
+            <tr><td>2</td><td>Feedback loop 是真的吗？</td><td>3 条 Rework 回路，Before/After 写库（第 19 页）</td></tr>
+            <tr><td>3</td><td>3 条 rework 是系统失败吗？</td><td>"无证据不下结论"的硬门控（第 40 页）</td></tr>
+            <tr><td>4</td><td>为什么不用 LangGraph？</td><td>状态传播 bug，改顺序执行（第 18 页）</td></tr>
+            <tr><td>5</td><td>超长上下文怎么办？</td><td>按 product 分组分批，无截断（第 27 页）</td></tr>
+            <tr><td>6</td><td>6 维评分阈值怎么定？</td><td>E2E 实测：0.45→0.38→0.32（第 12 页）</td></tr>
+            <tr><td>7</td><td>未知产品怎么办？</td><td>4 级兜底链：Doubao→DuckDuckGo→LLM→Fixture（第 31 页）</td></tr>
+            <tr><td>8</td><td>系统稳定性怎么保证？</td><td>3 级 fallback + 8 项 v0.3 稳定性补丁（第 35 页）</td></tr>
+            <tr><td>9</td><td>业务价值如何量化？</td><td>24x 提速、6x 覆盖、3.3x 溯源、5x 复用（第 44 页）</td></tr>
+            <tr><td>10</td><td>6 种 Schema 怎么切换？</td><td>infer_schema_type() 关键词动态推断（第 32 页）</td></tr>
+            <tr><td>11</td><td>怎么保证报告不"看起来完整但全是漏洞"？</td><td>主动阻断 + 评分卡降级 + coverage 显式（第 26 页）</td></tr>
+            <tr><td>12</td><td>能跑多大规模？</td><td>4 产品 / 24.5 分钟线性，N 产品 = N×6 + 20 分钟</td></tr>
+            <tr><td>13</td><td>TRAE 等 AI 编程工具的使用？</td><td>深度协作，ai_coding_log.md 持续记录</td></tr>
+            <tr><td>14</td><td>性能瓶颈？</td><td>write_report_v2 84% 时间，方向：并行/增量/缓存</td></tr>
+        </tbody>
+    </table>
+    <div class="slide-num">50 / 50</div>
+</div>
+
+<!-- Navigation -->
+<div class="nav">
+    <button onclick="prevSlide()">← Prev</button>
+    <span class="progress" id="progress">1 / 50</span>
+    <button onclick="nextSlide()">Next →</button>
+</div>
+
+<script>
+let current = 1;
+const total = 50;
+
+function show(n) {
+    if (n < 1) n = 1;
+    if (n > total) n = total;
+    document.querySelectorAll('.slide').forEach(s => s.classList.remove('active'));
+    document.querySelectorAll('.slide')[n-1].classList.add('active');
+    document.getElementById('progress').textContent = n + ' / ' + total;
+    current = n;
+}
+
+function nextSlide() { show(current + 1); }
+function prevSlide() { show(current - 1); }
+
+document.addEventListener('keydown', (e) => {
+    if (e.key === 'ArrowRight' || e.key === ' ' || e.key === 'PageDown') nextSlide();
+    if (e.key === 'ArrowLeft' || e.key === 'PageUp') prevSlide();
+    if (e.key === 'Home') show(1);
+    if (e.key === 'End') show(total);
+});
+
+show(1);
+</script>
+
+</body>
+</html>
