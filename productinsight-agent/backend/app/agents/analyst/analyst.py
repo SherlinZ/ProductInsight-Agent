@@ -11,7 +11,46 @@ from backend.app.tracing.llm_trace import traced_llm_call, create_llm_fallback_t
 logger = logging.getLogger(__name__)
 
 # Prompt version for analyst LLM calls
-ANALYST_PROMPT_VERSION = "v1.1"
+ANALYST_PROMPT_VERSION = "v1.2"
+
+# 18-dimension trigger list (v1.2 - report-quality upgrade)
+# Used by _build_dimension_trigger_block to instruct the LLM to attempt
+# at least one claim per (product, dimension) pair, provided evidence exists.
+DIMENSION_TRIGGER_LIST: list[dict[str, str]] = [
+    # Core function_tree (6)
+    {"dim": "workflow_orchestration", "zh": "工作流编排", "category": "function"},
+    {"dim": "rag_knowledge",          "zh": "RAG 与知识库", "category": "function"},
+    {"dim": "model_support",          "zh": "模型支持",     "category": "function"},
+    {"dim": "multi_agent",            "zh": "多 Agent 能力", "category": "function"},
+    {"dim": "integration",            "zh": "集成与扩展",   "category": "function"},
+    {"dim": "ease_of_use",            "zh": "易用性",       "category": "function"},
+    # Pricing (4)
+    {"dim": "pricing_model",          "zh": "定价模式",     "category": "pricing"},
+    {"dim": "free_tier",              "zh": "免费层",       "category": "pricing"},
+    {"dim": "paid_plans",             "zh": "付费方案",     "category": "pricing"},
+    {"dim": "value_proposition",      "zh": "价值主张",     "category": "pricing"},
+    # User / market (4)
+    {"dim": "user_persona",           "zh": "目标用户",     "category": "user_market"},
+    {"dim": "market_positioning",     "zh": "市场定位",     "category": "user_market"},
+    {"dim": "customer_voice",         "zh": "客户声音",     "category": "user_market"},
+    {"dim": "competitive_positioning","zh": "竞争定位",     "category": "user_market"},
+    # Enterprise / deployment (4)
+    {"dim": "deployment_options",     "zh": "部署方式",     "category": "enterprise"},
+    {"dim": "security",               "zh": "安全",         "category": "enterprise"},
+    {"dim": "compliance",             "zh": "合规",         "category": "enterprise"},
+    {"dim": "enterprise_readiness",   "zh": "企业就绪度",   "category": "enterprise"},
+]
+
+# v1.2: Map trigger-list dim names to whatever the user task_brief might use
+# (lets the trigger block stay stable while still respecting normalization)
+_TRIGGER_DIM_ALIASES: dict[str, list[str]] = {
+    "rag_knowledge": ["rag", "rag_support", "knowledge_base"],
+    "ease_of_use": ["usability", "user_friendly"],
+    "value_proposition": ["ai_feature_pricing"],
+    "market_positioning": ["market_position", "brand_positioning"],
+    "competitive_positioning": ["competitive_position"],
+    "deployment_options": ["deployment"],
+}
 
 # Fallback defaults (used when task_brief doesn't specify)
 PRODUCTS = ["dify", "coze", "fastgpt", "flowise"]
@@ -197,6 +236,29 @@ class AnalystAgent:
             valid_products=valid_products,
             valid_dimensions=valid_dimensions,
         )
+
+        # P0-Fix: Guarantee each product has at least one claim.
+        # LLM non-determinism means same evidence can produce different claim sets.
+        # _ensure_product_coverage issues supplemental calls for any product
+        # that has usable evidence but received zero claims in the main pass.
+        coverage_result = self._ensure_product_coverage(
+            claims=claims,
+            evidence_items=evidence_items,
+            facts=facts,
+            task_brief=task_brief,
+            run_id=run_id,
+            project_id=project_id,
+            valid_products=valid_products,
+        )
+        if coverage_result.get("supplemental_claims"):
+            logger.info(
+                "AnalystAgent.analyze: added %d supplemental claims for missing products | "
+                "run_id=%s | gaps=%s",
+                len(coverage_result["supplemental_claims"]),
+                run_id,
+                coverage_result.get("gaps", []),
+            )
+            claims = claims + coverage_result["supplemental_claims"]
 
         logger.info(
             "AnalystAgent.analyze completed | run_id=%s | claims_generated=%d",
@@ -417,6 +479,154 @@ class AnalystAgent:
     # Prompt construction                                                  #
     # ------------------------------------------------------------------ #
 
+    def _extract_valid_dimensions_for_trigger(self, task_brief: dict[str, Any] | None) -> set[str]:
+        """
+        v1.2: Extract valid_dimensions from task_brief for the trigger block.
+
+        Mirrors the same logic used in _extract_valid_products_and_dimensions
+        (called by analyze()), so the system-prompt trigger block matches
+        what the user prompt actually presents to the LLM.
+        """
+        if not task_brief:
+            return set(ALL_DIMENSIONS)
+        raw_dimensions = task_brief.get(
+            "analysis_dimensions",
+            task_brief.get("dimensions", []),
+        )
+        schema_type = task_brief.get("task_type", task_brief.get("schema_type", ""))
+        if raw_dimensions:
+            valid_dims: set[str] = set()
+            for d in raw_dimensions:
+                if isinstance(d, dict):
+                    dim_id = d.get("dimension_id", "")
+                    if dim_id:
+                        valid_dims.add(dim_id)
+                        valid_dims.add(dim_id.lower())
+                else:
+                    dim = str(d).strip()
+                    if dim:
+                        valid_dims.add(dim)
+                        valid_dims.add(dim.lower())
+            return valid_dims or set(ALL_DIMENSIONS)
+        if schema_type == "pricing_analysis":
+            return set(PRICING_ANALYSIS_DIMENSIONS)
+        return set(ALL_DIMENSIONS)
+
+    def _build_dimension_trigger_block(self, valid_dimensions: set[str]) -> str:
+        """
+        Build a 18-dimension coverage target block (v1.2).
+
+        The block tells the LLM to ATTEMPT at least one claim per
+        (product, dimension) pair, provided evidence exists. Pairs without
+        evidence are explicitly skipped (no fabrication).
+
+        Only dimensions present in ``valid_dimensions`` are listed, so this
+        block respects the task_brief's declared analysis dimensions.
+        """
+        # Filter trigger list to dimensions that are actually allowed for this run
+        matched: list[dict[str, str]] = []
+        for entry in DIMENSION_TRIGGER_LIST:
+            aliases = _TRIGGER_DIM_ALIASES.get(entry["dim"], [])
+            candidates = [entry["dim"]] + aliases
+            if any(c in valid_dimensions for c in candidates):
+                matched.append(entry)
+
+        if not matched:
+            return "No dimension coverage target available for this task."
+
+        # Group by category for readability
+        grouped: dict[str, list[dict[str, str]]] = {}
+        for entry in matched:
+            grouped.setdefault(entry["category"], []).append(entry)
+
+        category_zh = {
+            "function":     "功能维度",
+            "pricing":      "定价维度",
+            "user_market":  "用户与市场维度",
+            "enterprise":   "企业与部署维度",
+        }
+
+        lines: list[str] = [
+            f"You should ATTEMPT to cover each of the following {len(matched)} dimensions, "
+            "producing at least one claim per (product, dimension) pair IF the evidence supports it. "
+            "If no evidence exists for a (product, dimension) pair, SKIP that pair entirely — "
+            "do NOT fabricate or hallucinate.\n",
+        ]
+        for cat in ("function", "pricing", "user_market", "enterprise"):
+            entries = grouped.get(cat, [])
+            if not entries:
+                continue
+            lines.append(f"- {category_zh[cat]}:")
+            for e in entries:
+                lines.append(f"  - `{e['dim']}` ({e['zh']})")
+        lines.append("")
+        lines.append(
+            "Target output: aim for 15+ signed-eligible claims across the four products, "
+            "weighted by evidence availability. Cover all four products, not just one."
+        )
+        return "\n".join(lines)
+
+    def _build_coverage_matrix_block(
+        self,
+        evidence_items: list[dict[str, Any]],
+        valid_products: set[str],
+        valid_dimensions: set[str],
+    ) -> str:
+        """
+        v1.2: Build a (product, dimension) coverage matrix from available evidence.
+
+        The matrix tells the LLM exactly which pairs are evidence-backed and
+        therefore eligible for claim generation. This drives the increase
+        from 6-7 claims to 15+.
+
+        Output format (markdown-ish):
+          product=coze:  workflow_orchestration(3 ev), rag_knowledge(2 ev), ...
+          product=dify:  ...
+
+        Only pairs with >= 1 evidence item are listed, to keep the matrix honest
+        and to discourage fabrication of unsupported pairs.
+        """
+        from collections import defaultdict
+        # Count evidence per (normalized_product, normalized_dimension)
+        counts: dict[tuple[str, str], int] = defaultdict(int)
+        for ev in evidence_items:
+            pid_raw = str(ev.get("product_id", "")).strip()
+            dim_raw = str(ev.get("schema_key", "")).strip()
+            if not pid_raw or not dim_raw:
+                continue
+            # Reuse the same normalization used elsewhere
+            pid = self._normalize_product_id(pid_raw, valid_products) or pid_raw.lower()
+            dim = self._normalize_dimension(dim_raw, valid_dimensions) or dim_raw.lower()
+            if pid in valid_products or pid in {p.lower() for p in valid_products}:
+                if dim in valid_dimensions or dim in {d.lower() for d in valid_dimensions}:
+                    counts[(pid, dim)] += 1
+
+        if not counts:
+            return "(No evidence-backed pairs detected. Generate claims only where you see evidence in the list above.)"
+
+        # Group by product
+        per_product: dict[str, dict[str, int]] = defaultdict(dict)
+        for (pid, dim), n in counts.items():
+            per_product[pid][dim] = per_product[pid].get(dim, 0) + n
+
+        lines: list[str] = [
+            f"The following {sum(len(v) for v in per_product.values())} (product, dimension) "
+            "pairs have evidence. Generate at least one claim for each pair.",
+            "Skip pairs not listed here.",
+            "",
+        ]
+        for pid in sorted(per_product.keys()):
+            dims_sorted = sorted(per_product[pid].items(), key=lambda x: -x[1])
+            dims_str = ", ".join(f"{d} ({n} ev)" for d, n in dims_sorted)
+            lines.append(f"- product=`{pid}`: {dims_str}")
+
+        lines.append("")
+        lines.append(
+            "Target: aim for 15+ claims total, distributed across all products. "
+            "Use higher confidence for pairs with more evidence, lower for pairs with thin evidence."
+        )
+        return "\n".join(lines)
+
     def _build_system_prompt(self, task_brief: dict[str, Any] | None = None) -> str:
         """
         Build system prompt dynamically based on task_brief.
@@ -436,6 +646,10 @@ class AnalystAgent:
         elif task_type:
             domain_context = f"Analysis domain: {task_type}."
         
+        # Build trigger block based on valid_dimensions (extracted from task_brief)
+        valid_dims_for_trigger = self._extract_valid_dimensions_for_trigger(task_brief)
+        trigger_block = self._build_dimension_trigger_block(valid_dims_for_trigger)
+
         return f"""\
 You are a senior competitive intelligence analyst. Analyze only the products and dimensions \
 specified in the task brief. {domain_context}
@@ -458,6 +672,9 @@ You will receive:
 - A task brief describing the analysis scope and objectives.
 - Evidence items (snippets) extracted from web sources, each with an evidence_id, \
   product_id, and schema_key (dimension tag).
+
+# DIMENSION COVERAGE TARGET (v1.2)
+{trigger_block}
 
 Your output must be a valid JSON object with a top-level "claims" array. \
 Each element in the array must conform exactly to the schema below."""
@@ -549,6 +766,22 @@ Each element in the array must conform exactly to the schema below."""
             lines.extend(facts_lines)
         else:
             lines.append("(No facts extracted)")
+
+        # v1.2: Build a (product, dimension) coverage matrix from available evidence
+        # so the LLM has an explicit checklist to satisfy, increasing signed-claim count.
+        coverage_block = self._build_coverage_matrix_block(
+            evidence_items=evidence_items,
+            valid_products=set(target_products) if target_products else set(PRODUCTS),
+            valid_dimensions=set(target_dimensions) if target_dimensions else set(ALL_DIMENSIONS),
+        )
+
+        lines.extend([
+            "",
+            "# Coverage Matrix (v1.2 — evidence-backed pairs to cover)",
+            "",
+            coverage_block,
+            "",
+        ])
 
         lines.extend([
             "",
@@ -732,3 +965,173 @@ Each element in the array must conform exactly to the schema below."""
             claims.append(claim)
 
         return claims
+
+    def _ensure_product_coverage(
+        self,
+        claims: list[dict[str, Any]],
+        evidence_items: list[dict[str, Any]],
+        facts: list[dict[str, Any]],
+        task_brief: dict[str, Any],
+        run_id: str,
+        project_id: str | None,
+        valid_products: set[str],
+    ) -> dict[str, Any]:
+        """
+        Check that every product with usable evidence received at least one claim.
+
+        LLM non-determinism means the main analyze() pass can silently skip
+        a product even when high-quality evidence exists. This method detects
+        those gaps and issues a targeted supplemental LLM call to fill them.
+
+        Returns:
+            {
+                "gaps": list of product_ids with no claims despite usable evidence,
+                "supplemental_claims": list of newly-generated claims,
+            }
+        """
+        result: dict[str, Any] = {"gaps": [], "supplemental_claims": []}
+
+        # Index usable evidence by product
+        usable_by_product: dict[str, list[dict[str, Any]]] = {}
+        for ev in evidence_items:
+            if not ev.get("usable_for_claim"):
+                continue
+            pid = str(ev.get("product_id") or "").strip()
+            if pid:
+                usable_by_product.setdefault(pid, []).append(ev)
+
+        # Determine which products already have at least one claim
+        products_with_claims: set[str] = set()
+        for claim in claims:
+            pid = str(claim.get("product_id") or "").strip()
+            if pid:
+                products_with_claims.add(pid)
+
+        # Find gaps: products that have usable evidence but zero claims
+        gaps: list[str] = []
+        for pid in usable_by_product:
+            pid_lower = pid.lower()
+            has_claim = (
+                pid in products_with_claims
+                or pid_lower in products_with_claims
+                or any(pid in p or p in pid for p in products_with_claims)
+            )
+            if not has_claim:
+                gaps.append(pid)
+
+        if not gaps:
+            return result
+
+        result["gaps"] = gaps
+        logger.warning(
+            "AnalystAgent._ensure_product_coverage | run_id=%s | "
+            "products with no claims despite usable evidence: %s",
+            run_id, gaps,
+        )
+
+        supplemental_claims: list[dict[str, Any]] = []
+
+        # Gather evidence for gap products
+        gap_evidence: list[dict[str, Any]] = []
+        for pid in gaps:
+            gap_evidence.extend(usable_by_product.get(pid, []))
+
+        if not gap_evidence:
+            logger.info(
+                "AnalystAgent._ensure_product_coverage | run_id=%s | "
+                "gap products %s have no usable evidence — skipping supplemental call",
+                run_id, gaps,
+            )
+            return result
+
+        supplemental_system = (
+            "You are an analyst specializing in AI agent product competitive analysis. "
+            "Generate factual, evidence-backed claims for the specified products only. "
+            "Each claim must cite specific evidence from the provided data. "
+            "If evidence is insufficient for a claim, note that clearly. "
+            "Output a JSON object with a 'claims' array."
+        )
+
+        evidence_summary_lines: list[str] = []
+        for ev in gap_evidence:
+            snippet = str(ev.get("snippet") or "")[:500]
+            schema = ev.get("schema_key", "general")
+            source = ev.get("source_type", "unknown")
+            evidence_summary_lines.append(
+                f"[{ev.get('product_id')}] [{schema}] [{source}] {snippet}"
+            )
+        evidence_text = "\n".join(evidence_summary_lines)
+
+        supplemental_user = (
+            f"Task: Generate factual claims for the following products that currently have no coverage.\n"
+            f"Products requiring coverage: {', '.join(gaps)}\n\n"
+            f"Available evidence (product | schema | source | snippet):\n"
+            f"{evidence_text}\n\n"
+            f"Requirements:\n"
+            f"1. Generate at least ONE claim per product listed above\n"
+            f"2. Each claim must reference specific evidence from above\n"
+            f"3. Claims must be factual and precise\n"
+            f"4. Output JSON: {{'claims': [{{'product_id': '...', 'dimension': '...', "
+            f"'claim_text': '...', 'evidence_ids': ['...'], 'confidence': 0.7, 'risk_level': 'low'}}]}}\n"
+            f"5. If evidence does not support a claim, state that explicitly\n"
+            f"6. Do NOT invent information not present in the evidence"
+        )
+
+        messages = [
+            {"role": "system", "content": supplemental_system},
+            {"role": "user", "content": supplemental_user},
+        ]
+
+        def _supplemental_call():
+            client = get_llm_client()
+            return client.chat_json(messages, temperature=0.0, max_tokens=4096, timeout=60)
+
+        try:
+            sup_result = traced_llm_call(
+                run_id=run_id,
+                project_id=project_id,
+                node_name="analyze_dimensions",
+                agent_name="AnalystAgent",
+                agent_role="analyst",
+                prompt_version=ANALYST_PROMPT_VERSION,
+                prompt_text=supplemental_user,
+                input_payload={
+                    "gap_products": gaps,
+                    "evidence_count": len(gap_evidence),
+                    "supplemental": True,
+                },
+                call_fn=_supplemental_call,
+                parse_fn=lambda r: r if isinstance(r, dict) else {"raw": str(r)},
+                input_length_hint=len(supplemental_user),
+                decision_summary=f"Supplemental coverage for: {', '.join(gaps)}",
+            )
+            sup_response = sup_result.get("parsed_output") or {}
+        except Exception as exc:
+            logger.error(
+                "AnalystAgent._ensure_product_coverage | run_id=%s | "
+                "supplemental LLM call failed: %s",
+                run_id, exc,
+            )
+            return result
+
+        sup_claims = self._parse_and_enrich_claims(
+            sup_response, evidence_items, run_id,
+            valid_products=valid_products,
+            valid_dimensions=None,
+        )
+
+        for claim in sup_claims:
+            claim_pid = str(claim.get("product_id") or "").strip().lower()
+            if any(
+                g.lower() in claim_pid or claim_pid in g.lower() or g.lower() == claim_pid
+                for g in gaps
+            ):
+                supplemental_claims.append(claim)
+
+        result["supplemental_claims"] = supplemental_claims
+        logger.info(
+            "AnalystAgent._ensure_product_coverage | run_id=%s | "
+            "supplemental claims generated: %d for gaps: %s",
+            run_id, len(supplemental_claims), gaps,
+        )
+        return result
