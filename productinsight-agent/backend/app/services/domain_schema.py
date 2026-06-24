@@ -1049,3 +1049,40 @@ def understand_query(query: str, products: list[str] | None = None) -> dict[str,
         "products_mentioned": products or [],
         "need_discovery": len(products or []) == 0,
     }
+
+
+# ============================================================================
+# Utility: Dimension i18n
+# ============================================================================
+
+def get_dimension_chinese(dimension: str) -> str:
+    """
+    Return the Chinese label for a comparison_dimension, falling back to a
+    human-readable slug if no explicit chinese field is defined.
+
+    This is the single source of truth for translating dimension names
+    (used as table row labels, axis labels, etc.) to Chinese.
+    """
+    # Scan all domain schemas for a matching dimension
+    for schema in DOMAIN_SCHEMAS.values():
+        for dim_def in schema.get("comparison_dimensions", []):
+            if dim_def.get("dimension") == dimension:
+                chinese = dim_def.get("chinese")
+                if chinese:
+                    return chinese
+    # Fallback: replace underscores with spaces, strip common suffixes
+    label = dimension.replace("_", " ").replace("-", " ")
+    # Strip trailing "_" that might come from slugified names
+    label = label.strip()
+    return label
+
+
+def get_all_dimensions_for_schema(schema_type: str) -> list[dict[str, Any]]:
+    """Return the comparison_dimensions list for a schema type, with chinese field present."""
+    schema = DOMAIN_SCHEMAS.get(schema_type, {})
+    dims = schema.get("comparison_dimensions", [])
+    # Ensure every dimension has a chinese label
+    for dim in dims:
+        if "chinese" not in dim:
+            dim["chinese"] = get_dimension_chinese(dim.get("dimension", ""))
+    return dims
