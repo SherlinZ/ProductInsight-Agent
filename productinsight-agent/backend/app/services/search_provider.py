@@ -16,11 +16,84 @@ from __future__ import annotations
 import json
 import logging
 import os
+import threading
+import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
+
+# ============================================================================
+# Network Health Probe (P0: Resilience)
+# ============================================================================
+# Module-level singleton that records recent network calls (per host)
+# and short-circuits providers that have been failing in this process.
+# Prevents 30s × 3 retry × 30 queries = 45 minutes of wall-clock
+# spinning when the egress to overseas APIs is blocked.
+
+class _NetworkHealthProbe:
+    """Thread-safe, process-level probe for outbound network health.
+
+    Records the outcome of recent search attempts. When a host has
+    failed (timeout / connection error) >= FAILURE_THRESHOLD times
+    in a row, ``is_degraded(host)`` returns True and downstream
+    providers should fast-fail rather than retry.
+    """
+
+    FAILURE_THRESHOLD = 3
+    RECOVERY_AFTER_S = 60  # how long to remember failures
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._failures: dict[str, list[float]] = {}  # host -> [ts, ts, ...]
+        self._total_calls: dict[str, int] = {}
+        self._total_failures: dict[str, int] = {}
+
+    def record(self, host: str, success: bool) -> None:
+        now = time.time()
+        with self._lock:
+            self._total_calls[host] = self._total_calls.get(host, 0) + 1
+            if not success:
+                self._failures.setdefault(host, []).append(now)
+                self._total_failures[host] = self._total_failures.get(host, 0) + 1
+                # Prune old entries
+                cutoff = now - self.RECOVERY_AFTER_S
+                self._failures[host] = [t for t in self._failures[host] if t >= cutoff]
+            else:
+                # success clears the failure streak
+                self._failures.pop(host, None)
+
+    def is_degraded(self, host: str) -> bool:
+        """True if the host has been failing in the recent window."""
+        with self._lock:
+            streak = len(self._failures.get(host, []))
+            return streak >= self.FAILURE_THRESHOLD
+
+    def stats(self) -> dict[str, dict[str, int]]:
+        with self._lock:
+            return {
+                h: {
+                    "calls": self._total_calls.get(h, 0),
+                    "failures": self._total_failures.get(h, 0),
+                    "recent_failures": len(self._failures.get(h, [])),
+                    "degraded": self.is_degraded(h),
+                }
+                for h in set(self._total_calls) | set(self._failures)
+            }
+
+
+_HEALTH_PROBE = _NetworkHealthProbe()
+
+
+def get_network_health() -> dict[str, dict[str, int]]:
+    """Expose the network probe for observability."""
+    return _HEALTH_PROBE.stats()
+
+
+def is_degraded(host: str) -> bool:
+    """Convenience check used by individual providers."""
+    return _HEALTH_PROBE.is_degraded(host)
 
 # Auto-load .env file from the project root (productinsight-agent/)
 _env_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))), ".env")
@@ -200,17 +273,16 @@ class DoubaoWebSearchProvider(SearchProvider):
     
     def search(self, query: str, top_k: int = 5, limit: int | None = None) -> list[SearchResult]:
         """
-        Search using Doubao Responses API with web_search tool.
-        
+        Search using Doubao Chat Completions API with web_search tool.
+
         Args:
             query: Search query
             top_k: Maximum results (alias: limit)
             limit: Alias for top_k (for compatibility)
-            
+
         Returns:
             List of SearchResult objects
         """
-        # Support both top_k and limit parameter names
         if limit is not None:
             top_k = limit
 
@@ -219,76 +291,78 @@ class DoubaoWebSearchProvider(SearchProvider):
         import json
         import time
 
-        # P2 FIX: Add rate limit detection and backoff
-        # Check for persistent rate limit state
+        # Rate limit detection
         rate_limit_until = getattr(self, '_rate_limit_until', 0)
         if rate_limit_until and time.time() < rate_limit_until:
             logger.warning(
                 "Doubao API rate limited, waiting %ds before retry",
                 int(rate_limit_until - time.time())
             )
-            time.sleep(min(rate_limit_until - time.time(), 30))  # Cap at 30s
+            time.sleep(min(rate_limit_until - time.time(), 30))
 
         max_retries = self.max_retries
-        retry_delay = 10  # seconds
+        retry_delay = 10
 
         for attempt in range(max_retries):
             try:
-                # Get credentials from environment
                 api_key = os.environ.get("MODEL_API_KEY")
                 endpoint = os.environ.get("MODEL_ENDPOINT", "https://ark.cn-beijing.volces.com/api/v3")
+                model = os.environ.get("MODEL_NAME", "ep-20260514111325-xjmj7")
 
                 if not api_key:
                     logger.warning("Doubao API key not found")
                     return []
 
-                url = f"{endpoint}/responses"
+                # Use Chat Completions API (NOT Responses API which ep-* models don't support).
+                # We ask the model to return URLs in text as JSON, then parse them.
+                # DO NOT use tools/web_search with ep-* models — they recognize the tool but
+                # return no structured results, and forcing tool_choice blocks text output.
+                chat_url = f"{endpoint}/chat/completions"
                 headers = {
                     "Authorization": f"Bearer {api_key}",
                     "Content-Type": "application/json",
                 }
 
                 payload = {
-                    "model": self.model,
-                    "input": [{"role": "user", "content": f"Search the web for: {query}. Return the top {top_k} results with their URLs and brief descriptions. Focus on official websites and documentation."}],
-                    "tools": [{"type": "web_search"}],
+                    "model": model,
+                    "messages": [{
+                        "role": "user",
+                        "content": (
+                            f"Search the web for: {query}. "
+                            f"Return the top {top_k} results as a JSON array with objects "
+                            f'containing: url, title, and snippet (max 200 chars each). '
+                            f'Format: [{{"url":"https://...","title":"...","snippet":"..."}}]. '
+                            f"If you cannot find results, return an empty array []. "
+                            f"Focus on official websites, documentation, and pricing pages."
+                        )
+                    }],
+                    "max_tokens": 2000,
+                    "temperature": 0.1,
                 }
 
-                response = requests.post(url, headers=headers, json=payload, timeout=self.timeout)
+                response = requests.post(chat_url, headers=headers, json=payload, timeout=self.timeout)
 
-                # P2 FIX: Detect rate limit (429) and set backoff
                 if response.status_code == 429:
-                    error_text = response.text[:500]
                     logger.warning(
-                        "Doubao API rate limited (attempt %d/%d): %s",
-                        attempt + 1, max_retries, error_text
+                        "Doubao API rate limited (attempt %d/%d)",
+                        attempt + 1, max_retries
                     )
                     if attempt < max_retries - 1:
-                        # Set persistent rate limit state
                         self._rate_limit_until = time.time() + retry_delay * (attempt + 1)
-                        logger.info(
-                            "Doubao API: backing off for %ds (attempt %d/%d)",
-                            retry_delay * (attempt + 1), attempt + 1, max_retries
-                        )
                         time.sleep(retry_delay)
-                        retry_delay *= 2  # Exponential backoff
+                        retry_delay *= 2
                         continue
                     else:
-                        logger.error(
-                            "Doubao API rate limited after %d attempts, giving up",
-                            max_retries
-                        )
                         return []
 
                 if response.status_code != 200:
-                    logger.error(f"Doubao API returned status {response.status_code}: {response.text[:200]}")
+                    logger.error(f"Doubao Chat API returned status {response.status_code}: {response.text[:200]}")
                     return []
 
-                # Clear rate limit state on success
                 self._rate_limit_until = 0
 
                 data = response.json()
-                results = self._parse_response(data, query)
+                results = self._parse_chat_response(data, query)
                 logger.info(f"Doubao search for '{query}' returned {len(results)} results")
                 return results
 
@@ -306,7 +380,120 @@ class DoubaoWebSearchProvider(SearchProvider):
                 return []
 
         return []
-    
+
+    def _parse_chat_response(self, data: Any, query: str) -> list["SearchResult"]:
+        """
+        Parse Doubao Chat Completions API response.
+
+        The ep-* thinking model doesn't return structured tool results from web_search.
+        Instead, it returns URLs directly in the text content. We parse the message
+        content to extract URLs.
+        """
+        import re
+        results = []
+        seen_urls = set()
+
+        try:
+            choices = data.get('choices', [])
+            for choice in choices:
+                message = choice.get('message', {})
+
+                # Try structured tool results first
+                tool_calls = message.get('tool_calls', [])
+                for tc in tool_calls:
+                    func = tc.get('function', {})
+                    if func.get('name') != 'web_search':
+                        continue
+                    tool_output = (tc.get('tool_call_output') or tc.get('output') or '')
+                    if isinstance(tool_output, str):
+                        try:
+                            parsed = json.loads(tool_output)
+                            if isinstance(parsed, list):
+                                for i, item in enumerate(parsed):
+                                    if isinstance(item, dict):
+                                        url = item.get('url', '')
+                                        if url and url not in seen_urls and not any(n in url.lower() for n in ['api_key', 'token', 'secret', 'password']):
+                                            seen_urls.add(url)
+                                            results.append(SearchResult(
+                                                title=item.get('title', f"Result {i+1}")[:100],
+                                                url=url,
+                                                snippet=item.get('snippet', item.get('description', ''))[:200],
+                                                source_type="web",
+                                                provider=self.provider_name,
+                                                rank=i,
+                                            ))
+                        except Exception:
+                            pass
+
+                # PRIMARY: Extract URLs directly from message content.
+                # The ep-* model returns URLs either as structured JSON or plain text.
+                content = message.get('content', '')
+                if content:
+                    # Try parsing as JSON first
+                    try:
+                        # Find JSON array in content
+                        match = re.search(r'\[[\s\S]*\]', content)
+                        if match:
+                            parsed = json.loads(match.group(0))
+                            if isinstance(parsed, list):
+                                for i, item in enumerate(parsed):
+                                    if isinstance(item, dict):
+                                        url = item.get('url', '')
+                                        if url and url not in seen_urls and not any(n in url.lower() for n in ['api_key', 'token', 'secret', 'password']):
+                                            seen_urls.add(url)
+                                            results.append(SearchResult(
+                                                title=item.get('title', f"Result {i+1}")[:100],
+                                                url=url,
+                                                snippet=item.get('snippet', item.get('description', ''))[:200],
+                                                source_type="web",
+                                                provider=self.provider_name,
+                                                rank=i,
+                                            ))
+                    except Exception:
+                        pass
+
+                    # Fallback: extract URLs from raw text
+                    if not results:
+                        urls = re.findall(r'https?://[^\s<>\[\]()\'\"\n]{10,}', content)
+                        for i, raw_url in enumerate(urls):
+                            url = raw_url.rstrip('.,;:!?，。；：！？')
+                            if url and url not in seen_urls and not any(n in url.lower() for n in ['api_key', 'token', 'secret', 'password']):
+                                seen_urls.add(url)
+                                pos = content.find(url)
+                                ctx_start = max(0, pos - 50)
+                                ctx_end = min(len(content), pos + len(url) + 100)
+                                snippet = content[ctx_start:ctx_end].strip()
+                                results.append(SearchResult(
+                                    title=f"Result {len(results)+1}",
+                                    url=url,
+                                    snippet=snippet[:200],
+                                    source_type="web",
+                                    provider=self.provider_name,
+                                    rank=len(results),
+                                ))
+
+            # Fallback: scan entire response for URLs
+            if not results:
+                text = json.dumps(data)
+                urls = re.findall(r'https?://[^\s<>\[\]()\'\"]{10,}', text)
+                for i, raw_url in enumerate(urls[:5]):
+                    url = raw_url.rstrip('.,;:!?').rstrip('.,;:!?')
+                    if url and url not in seen_urls and not any(n in url.lower() for n in ['api_key', 'token', 'secret', 'password']):
+                        seen_urls.add(url)
+                        results.append(SearchResult(
+                            title=f"Result {i+1}",
+                            url=url,
+                            snippet=f"URL found: {url[:80]}",
+                            source_type="web",
+                            provider=self.provider_name,
+                            rank=i,
+                        ))
+
+        except Exception as e:
+            logger.warning(f"DoubaoChat: failed to parse response: {e}")
+
+        return results
+
     def _parse_response(self, response: Any, query: str) -> list[SearchResult]:
         """
         Parse Doubao Responses API output into SearchResult objects.
@@ -932,6 +1119,14 @@ class DuckDuckGoProvider(SearchProvider):
         if limit is not None:
             top_k = limit
 
+        # P0: Short-circuit when the network probe has marked this host degraded.
+        host = "api.duckduckgo.com"
+        if is_degraded(host):
+            logger.warning(
+                "DuckDuckGo search: skipping '%s' (host degraded)", query[:40]
+            )
+            return []
+
         results = []
         seen_urls: set[str] = set()
 
@@ -952,7 +1147,9 @@ class DuckDuckGoProvider(SearchProvider):
             )
             if resp.status_code != 200:
                 logger.warning(f"DuckDuckGo returned {resp.status_code} for query: {query}")
+                _HEALTH_PROBE.record(host, success=False)
                 return []
+            _HEALTH_PROBE.record(host, success=True)
 
             data = resp.json()
 
@@ -1031,7 +1228,16 @@ class LLMInferenceProvider(SearchProvider):
     the LLM API endpoint is accessible (which is always for this codebase).
     """
 
-    def __init__(self, timeout: int = 20):
+    # Class-level cache: same (query, top_k) -> same answer
+    # Prevents re-asking the LLM for queries we've already answered
+    # when multiple nodes (collect_sources + execute_rework) issue them.
+    _QUERY_CACHE: dict[tuple[str, int], list[SearchResult]] = {}
+    _CACHE_LOCK = threading.Lock()
+    _CACHE_MAX = 256
+
+    def __init__(self, timeout: int = 45):
+        # P1 (2026-06-22): Doubao Thinking model (ep-*) adds 5-25s of internal
+        # reasoning tokens before producing output. Default increased from 30s to 45s.
         self.timeout = timeout
 
     @property
@@ -1059,6 +1265,12 @@ class LLMInferenceProvider(SearchProvider):
         """
         if limit is not None:
             top_k = limit
+
+        cache_key = (query.strip().lower(), top_k)
+        with self._CACHE_LOCK:
+            if cache_key in self._QUERY_CACHE:
+                logger.debug("LLMInferenceProvider: cache hit for '%s'", query[:40])
+                return list(self._QUERY_CACHE[cache_key])
 
         try:
             from backend.app.services.llm_client import get_llm_client
@@ -1115,8 +1327,24 @@ class LLMInferenceProvider(SearchProvider):
                     source_type="llm_inference",
                     provider=self.provider_name,
                     rank=len(results),
+                    # P0: Mark all LLM-inferred results as unverified.
+                    # Downstream evidence evaluators can use this to
+                    # cap the trust tier and the report writer can
+                    # surface a "based on LLM knowledge" caveat.
+                    metadata={"_unverified_external": True,
+                              "_origin": "llm_knowledge"},
                 ))
 
+            # Write to cache for subsequent calls (collect_sources + execute_rework
+            # may issue the same query; LLM call is expensive at ~4-6s each).
+            with self._CACHE_LOCK:
+                if len(self._QUERY_CACHE) >= self._CACHE_MAX:
+                    # Drop the oldest half (FIFO). Insertion order is
+                    # preserved in Python 3.7+ dicts.
+                    keep = self._CACHE_MAX // 2
+                    for k in list(self._QUERY_CACHE.keys())[:-keep]:
+                        self._QUERY_CACHE.pop(k, None)
+                self._QUERY_CACHE[cache_key] = list(results)
             return results
 
         except Exception as exc:
@@ -1162,35 +1390,76 @@ class HybridSearchProvider(SearchProvider):
     def search(self, query: str, top_k: int = 5, limit: int | None = None) -> list[SearchResult]:
         """
         Search using providers in fallback order.
+
+        P0: Adds a per-provider wall-clock budget. If a provider takes
+        longer than PROVIDER_BUDGET_S, the call is abandoned (the
+        underlying request may still complete; we just stop waiting)
+        and we move to the next provider. This prevents a single slow
+        provider (e.g. an overseas endpoint that needs 90s of retries
+        to time out) from blocking the entire chain.
         """
         # Support both top_k and limit parameter names
         if limit is not None:
             top_k = limit
-            
+
+        # P1 (2026-06-22): Raised from 25s to 45s. The Doubao Thinking model
+        # (ep-*) uses internal reasoning tokens that add 5-25s before output.
+        # A healthy Doubao web_search call with reasoning takes 8-30s; a healthy
+        # LLMInference call takes 15-40s. Setting 45s allows both to complete
+        # without being killed mid-reasoning.
+        PROVIDER_BUDGET_S = 45.0
+
         seen_urls = set()
         all_results = []
-        
+        providers_tried: list[tuple[str, float, int]] = []  # (name, elapsed, count)
+
         for provider_name in self.fallback_order:
             provider = self.providers.get(provider_name)
             if not provider or not provider.is_available():
                 continue
-            
+
+            t0 = time.time()
             try:
-                results = provider.search(query, top_k)
-                
+                # Run provider.search under a thread so we can apply a
+                # wall-clock budget without trusting the provider to honor
+                # its own timeout.
+                import concurrent.futures
+                with concurrent.futures.ThreadPoolExecutor(max_workers=1) as ex:
+                    fut = ex.submit(provider.search, query, top_k)
+                    try:
+                        results = fut.result(timeout=PROVIDER_BUDGET_S)
+                    except concurrent.futures.TimeoutError:
+                        logger.warning(
+                            "HybridSearchProvider: %s exceeded %.1fs budget for '%s', skipping",
+                            provider_name, PROVIDER_BUDGET_S, query[:40],
+                        )
+                        results = []
+
+                elapsed = time.time() - t0
+                providers_tried.append((provider_name, elapsed, len(results)))
+
                 # Deduplicate by URL
                 for result in results:
                     if result.url not in seen_urls:
                         seen_urls.add(result.url)
                         all_results.append(result)
-                
+
                 # Stop if we have enough results
                 if len(all_results) >= top_k:
                     break
-                    
+
             except Exception as e:
                 logger.warning(f"Provider {provider_name} failed: {e}")
-        
+                providers_tried.append((provider_name, time.time() - t0, 0))
+
+        # P0: Emit a single audit line per hybrid search so we can see
+        # which provider actually delivered results in the log.
+        if providers_tried:
+            summary = ", ".join(
+                f"{n}={elapsed:.1f}s/{c}" for n, elapsed, c in providers_tried
+            )
+            logger.info("HybridSearch '%s' → %d results via [%s]", query[:40], len(all_results), summary)
+
         return all_results[:top_k]
 
 
@@ -1230,31 +1499,53 @@ def create_search_provider(
     elif mode == "fixture":
         return FixtureProvider(domain=domain)
 
+    elif mode == "llm_knowledge":
+        # P0: LLM-knowledge-only mode for fully degraded networks.
+        # The LLM generates both authoritative URLs AND fact snippets
+        # from its training data. All results are tagged with
+        # ``_unverified_external: true`` so downstream nodes (the
+        # evidence evaluator, the report writer) know to surface a
+        # "based on LLM knowledge, not externally verified" caveat.
+        providers = [LLMInferenceProvider(timeout=30)]
+        return HybridSearchProvider(
+            providers=providers,
+            fallback_order=["llm_inference"],
+        )
+
     elif mode == "hybrid":
-        # Smart hybrid: Doubao → DuckDuckGo → LLM Inference → Seed URLs → Fixture
+        # Smart hybrid: Doubao → LLM Inference → DuckDuckGo → Seed URLs → Fixture
+        # P0: LLM Inference is moved earlier in the chain. It uses the
+        # LLM's training knowledge (no external network needed beyond
+        # the volces chat endpoint, which is domestic) and is the
+        # fastest *reliable* fallback. In the search_engines test we
+        # saw all overseas endpoints (Doubao web_search, DuckDuckGo,
+        # OpenAI, Perplexity) time out — only the LLM endpoint and
+        # direct-fetchable docs (github.com, *.cn) worked.
         providers = []
 
-        # Try to add Doubao web search (primary)
-        doubao = DoubaoWebSearchProvider(timeout=30, retry_count=3)
+        # Primary: Doubao web search (best when network is healthy)
+        doubao = DoubaoWebSearchProvider(timeout=15, retry_count=2)
         if doubao.is_available():
             providers.append(doubao)
 
-        # Add DuckDuckGo as second fallback (free, no API key)
-        providers.append(DuckDuckGoProvider(timeout=15, top_k=5))
+        # Second: LLM knowledge inference (uses domestic volces chat).
+        # timeout=30s — the web_search LLM call is heavier (reasoning +
+        # 500 max_tokens); we measured 4-6s when healthy.
+        providers.append(LLMInferenceProvider(timeout=30))
 
-        # Add LLM inference as third fallback (uses LLM knowledge, no external search needed)
-        providers.append(LLMInferenceProvider(timeout=20))
+        # Third: DuckDuckGo (free, but overseas → often times out)
+        providers.append(DuckDuckGoProvider(timeout=10, top_k=5))
 
-        # Add seed URL provider
+        # Fourth: seed URLs
         if seed_urls:
             providers.append(SeedUrlProvider(seed_urls=seed_urls, domain=domain))
 
-        # Always add fixture as final fallback
+        # Final: fixture
         providers.append(FixtureProvider(domain=domain))
 
         return HybridSearchProvider(
             providers=providers,
-            fallback_order=["doubao_web_search", "duckduckgo", "llm_inference",
+            fallback_order=["doubao_web_search", "llm_inference", "duckduckgo",
                            "seed_url", "fixture"],
         )
     
