@@ -41,6 +41,4 @@ def render_run_banner(rid: str):
             st.session_state["current_page_zh"] = "Analysis Flow"
             st.rerun()
     else:
-        if st.button("🏛 Review Center", key=f"banner_rc_{rid}", help="跳转人工审核与打回"):
-            st.session_state["current_page_zh"] = "Review Center"
-            st.rerun()
+        pass  # Review Center tab removed
