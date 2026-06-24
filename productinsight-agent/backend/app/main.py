@@ -1,5 +1,17 @@
 from __future__ import annotations
 
+import os as _os
+from pathlib import Path as _Path
+
+# Load .env from the backend directory (project root)
+_env_path = _Path(__file__).parent.parent.parent / ".env"
+if _env_path.exists():
+    try:
+        from dotenv import load_dotenv
+        load_dotenv(_env_path, override=True)
+    except ImportError:
+        pass  # python-dotenv not installed
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
