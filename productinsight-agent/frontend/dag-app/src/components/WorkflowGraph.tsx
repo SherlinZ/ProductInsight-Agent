@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import ReactFlow, {
   Node,
   Edge,
@@ -30,23 +30,24 @@ const STEP_H   = 120;
 const ORIGIN_X = 40;
 const ORIGIN_Y = 30;
 
+// Phase lanes: 0=规划, 1=采集, 2=评估, 3=分析, 4=写作, 5=输出
 const PHASE_LANES: Record<string, number> = {
   'build_task_brief':           0,
   'plan_schema':                0,
   'plan_sources':               0,
-  'collect_sources':            0,
-  'evaluate_evidence':          0,
-  'pii_scrub':                  0,
-  'extract_facts':               0,
-  'detect_schema_gaps':          0,
-  'analyze_dimensions':         0,
-  'review_claims':              0,
-  'execute_rework':             0,
-  'prepare_human_intervention': 0,
-  'write_report_v2':            0,
-  'final_review':               1,
-  'export_report':              2,
-  'compute_metrics':            2,
+  'collect_sources':            1,
+  'pii_scrub':                 1,
+  'extract_facts':              2,
+  'evaluate_evidence':          2,
+  'detect_schema_gaps':         2,
+  'analyze_dimensions':         3,
+  'review_claims':              3,
+  'execute_rework':             3,
+  'prepare_human_intervention': 3,
+  'write_report_v2':           4,
+  'final_review':               5,
+  'export_report':              5,
+  'compute_metrics':            5,
 };
 
 function computeLayout(
@@ -55,7 +56,24 @@ function computeLayout(
 ): Record<string, { x: number; y: number }> {
   const positions: Record<string, { x: number; y: number }> = {};
   const phaseCounter: Record<number, number> = {};
+
+  // P1-Redesign (2026-06-18): separate lane for parallel worker nodes.
+  // Parallel workers are placed BELOW the backbone in their own horizontal row,
+  // distributed evenly by product_index.
+  const parallelGroup: Record<string, WorkflowNode[]> = {};
+  for (const n of nodes) {
+    if (n.node_type === 'parallel_worker') {
+      const grp = (n as unknown as { parallel_group?: string }).parallel_group ?? 'collect_parallel';
+      if (!parallelGroup[grp]) parallelGroup[grp] = [];
+      parallelGroup[grp].push(n);
+    }
+  }
+
   for (const node of nodes) {
+    if (node.node_type === 'parallel_worker') {
+      // Handled below; skip the phase lane.
+      continue;
+    }
     const lane = PHASE_LANES[node.node_name] ?? 0;
     phaseCounter[lane] = (phaseCounter[lane] ?? -1) + 1;
     positions[node.node_name] = {
@@ -63,6 +81,29 @@ function computeLayout(
       y: ORIGIN_Y + phaseCounter[lane] * STEP_H,
     };
   }
+
+  // Lay out parallel workers in a row below the backbone.
+  // Y = (max backbone phase + 1) * STEP_H, X = centered around the group anchor.
+  const maxPhase = Math.max(0, ...Object.values(phaseCounter));
+  const parallelY = ORIGIN_Y + (maxPhase + 1) * STEP_H + 60; // 60px gap below backbone
+  const PARALLEL_W = 180;
+  for (const grp of Object.keys(parallelGroup)) {
+    const workers = parallelGroup[grp].sort((a, b) => {
+      const ai = (a as unknown as { product_index?: number }).product_index ?? 0;
+      const bi = (b as unknown as { product_index?: number }).product_index ?? 0;
+      return ai - bi;
+    });
+    const totalWidth = workers.length * PARALLEL_W;
+    // Anchor x based on which group: collect near LANE 0, evaluate near LANE 1
+    const groupAnchorX = grp === 'collect_parallel' ? ORIGIN_X + 80 : ORIGIN_X + 80;
+    workers.forEach((w, idx) => {
+      positions[w.node_name] = {
+        x: groupAnchorX + idx * PARALLEL_W - totalWidth / 2,
+        y: parallelY,
+      };
+    });
+  }
+
   return positions;
 }
 
@@ -104,7 +145,8 @@ function CollectionBadge({ stats }: { stats: CollectionStats }) {
 }
 
 // ── Custom node component ────────────────────────────────────────
-function WorkflowNodeComponent({
+// Must be memoized so nodeTypes stays referentially stable across renders.
+const WorkflowNodeComponent = React.memo(function WorkflowNodeComponent({
   data,
   selected,
 }: {
@@ -112,9 +154,38 @@ function WorkflowNodeComponent({
   selected: boolean;
 }) {
   const node = data.node as WorkflowNode;
-  const colors = STATUS_COLORS[node.status] ?? STATUS_COLORS.pending;
+  const isParallel = (node as unknown as { node_type?: string }).node_type === 'parallel_worker';
+  const isParallelGroup = (node as unknown as { node_type?: string }).node_type === 'parallel_group';
+
+  // P1-Redesign: parallel nodes get their own color scheme (amber) so they
+  // visually stand out from the main backbone (blue/green).
+  let colors;
+  if (isParallelGroup) {
+    colors = {
+      bg: '#3b0764',
+      border: '#e879f9',
+      text: '#f5d0fe',
+    };
+  } else if (isParallel) {
+    colors = {
+      bg: '#3b0764',
+      border: '#a78bfa',
+      text: '#e9d5ff',
+    };
+  } else {
+    colors = STATUS_COLORS[node.status] ?? STATUS_COLORS.pending;
+  }
+
   const isCollector = node.node_name === 'collect_sources';
   const stats: CollectionStats | null = node.collection_stats ?? null;
+
+  // Display label override for parallel worker / group nodes
+  const displayLabel = (node as unknown as { label?: string }).label ?? getNodeLabel(node.node_name);
+  const agentLabel = isParallel
+    ? 'Per-Product Worker'
+    : isParallelGroup
+    ? 'Parallel Group'
+    : getNodeAgent(node.node_name);
 
   return (
     <div
@@ -134,10 +205,10 @@ function WorkflowNodeComponent({
       />
 
       <div className="text-xs font-medium mb-1 opacity-70">
-        {getNodeAgent(node.node_name)}
+        {agentLabel}
       </div>
       <div className="text-sm font-semibold leading-tight">
-        {getNodeLabel(node.node_name)}
+        {displayLabel}
       </div>
       <div className="text-xs mt-1 opacity-60">{node.status.toUpperCase()}</div>
 
@@ -164,7 +235,11 @@ function WorkflowNodeComponent({
       />
     </div>
   );
-}
+});
+
+// Stable nodeTypes — defined at module level (after WorkflowNodeComponent) so
+// React Flow never sees a new object reference on re-renders.
+const nodeTypes = { workflowNode: WorkflowNodeComponent };
 
 // ── Build helpers ────────────────────────────────────────────────
 function buildNodes(
@@ -182,34 +257,58 @@ function buildNodes(
 function buildEdges(rawEdges: WorkflowEdge[]): Edge[] {
   return rawEdges.map(edge => {
     const key = `${edge.from_node}->${edge.to_node}`;
-    const label = EDGE_LABELS[key];
+    const baseLabel = EDGE_LABELS[key];
+
+    // P1-Redesign: rework edge styling
+    const reworkCount = (edge as unknown as { rework_count?: number }).rework_count ?? 0;
+
     const isConditional = edge.edge_type === 'conditional';
+    const isRework = reworkCount > 0;
+    const isParallelFan = edge.edge_type === 'parallel_fan_out' || edge.edge_type === 'parallel_fan_in';
 
     const LOOPBACK_NODES = new Set(['write_report_v2']);
     const isLoopback = LOOPBACK_NODES.has(edge.to_node) && isConditional;
+
+    // Label: append rework count when present
+    let labelText: string | undefined = baseLabel;
+    if (isRework) {
+      labelText = `${baseLabel ?? ''} (rework ×${reworkCount})`.trim();
+    } else if (isParallelFan) {
+      // Show "×N" only on fan-out, fan-in edges stay clean
+      labelText = edge.edge_type === 'parallel_fan_out' ? '×N' : undefined;
+    }
 
     return {
       id: edge.edge_id,
       source: edge.from_node,
       target: edge.to_node,
-      label: label ?? undefined,
+      label: labelText ?? undefined,
       type: 'default',
-      animated: isConditional,
+      animated: isConditional || isRework,
       style: {
-        stroke: isLoopback ? '#e879f9'
-           : isConditional ? '#f97316'
-           : '#475569',
-        strokeDasharray: isConditional ? '6 4' : undefined,
-        strokeWidth: isLoopback ? 2 : 1.5,
+        stroke: isRework ? '#e879f9'
+             : isLoopback ? '#e879f9'
+             : isParallelFan ? '#a78bfa'
+             : isConditional ? '#f97316'
+             : '#475569',
+        strokeDasharray: isConditional ? '6 4'
+                      : isRework ? '4 3'
+                      : isParallelFan ? '3 3'
+                      : undefined,
+        strokeWidth: isRework || isLoopback ? 2 : 1.5,
       },
       markerEnd: {
         type: MarkerType.ArrowClosed,
-        color: isLoopback ? '#e879f9' : isConditional ? '#f97316' : '#475569',
+        color: isRework || isLoopback ? '#e879f9'
+             : isParallelFan ? '#a78bfa'
+             : isConditional ? '#f97316'
+             : '#475569',
       },
       labelStyle: {
-        fill: '#94a3b8',
+        fill: isRework ? '#f5d0fe' : '#94a3b8',
         fontSize: 11,
         fontFamily: 'Segoe UI, system-ui, sans-serif',
+        fontWeight: isRework ? 600 : 400,
       },
       labelBgStyle: { fill: '#0f172a', fillOpacity: 0.9 },
       labelBgPadding: [4, 8] as [number, number],
@@ -268,10 +367,10 @@ export default function WorkflowGraph({
     setEdges(buildEdges(edges));
   }, [edges, setEdges]);
 
-  const handleNodeClick = (_: React.MouseEvent, node: Node) => {
-    const raw = nodes.find(n => n.node_name === node.id);
-    if (raw && onNodeClick) onNodeClick(raw);
-  };
+  const handleNodeClick = useCallback((_: React.MouseEvent, node: Node) => {
+    const raw = (node.data as { node: WorkflowNode }).node;
+    onNodeClick?.(raw);
+  }, [onNodeClick]);
 
   useFitViewOnLoad(shouldFit, rfInstanceRef.current);
 
@@ -284,7 +383,7 @@ export default function WorkflowGraph({
         onEdgesChange={rfEdges && rfEdges.length ? onEdgesChange : undefined}
         onNodeClick={handleNodeClick}
         onInit={(instance) => { rfInstanceRef.current = instance; }}
-        nodeTypes={{ workflowNode: WorkflowNodeComponent }}
+        nodeTypes={nodeTypes}
         fitView={false}
         minZoom={0.3}
         maxZoom={1.5}
