@@ -6,14 +6,19 @@
   "scripts": {
     "dev": "vite --port 3001",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "start": "node server.js",
+    "start:prod": "node server.js"
   },
   "dependencies": {
+    "express": "^5.2.1",
+    "http-proxy-middleware": "^4.1.1",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "reactflow": "^11.11.4"
   },
   "devDependencies": {
+    "@types/express": "^5.0.6",
     "@types/react": "^18.3.3",
     "@types/react-dom": "^18.3.0",
     "@vitejs/plugin-react": "^4.3.1",
