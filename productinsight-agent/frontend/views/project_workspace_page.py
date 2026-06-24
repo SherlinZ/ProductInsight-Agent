@@ -29,6 +29,34 @@ def _render_section_status_badge(status: str) -> str:
     return badges.get(status, "⚪")
 
 
+import os as _os
+
+_REPORTS_DIR = _os.path.join(
+    _os.path.dirname(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))),
+    "data", "reports"
+)
+_MIN_MD_SIZE = 10 * 1024
+_REAL_MD_SIZE = 30 * 1024
+_WARNING_MARKERS = ("⚠", "证据不足", "预评估阶段")
+
+
+def _check_report(run_id: str):
+    """Check if report_{run_id}_v2.md exists and get its size + quality."""
+    md_path = _os.path.join(_REPORTS_DIR, f"report_{run_id}_v2.md")
+    if not _os.path.exists(md_path):
+        return None
+    size = _os.path.getsize(md_path)
+    if size < _MIN_MD_SIZE:
+        return {"size": size, "is_real": False, "has_warning": False}
+    try:
+        head = open(md_path, encoding="utf-8", errors="ignore").read(10 * 1024)
+    except Exception:
+        head = ""
+    has_warning = any(m in head for m in _WARNING_MARKERS)
+    is_real = size >= _REAL_MD_SIZE and not has_warning
+    return {"size": size, "is_real": is_real, "has_warning": has_warning}
+
+
 # ── Planned → Runtime node mapping (planned DAG vs actual LangGraph backbone) ──
 PLANNED_TO_RUNTIME_MAPPING = [
     ("node_confirm_plan", "build_task_brief"),
@@ -46,9 +74,10 @@ PLANNED_TO_RUNTIME_MAPPING = [
 # Actual runtime nodes (16-node LangGraph backbone)
 RUNTIME_NODES = [
     "build_task_brief", "plan_schema", "plan_sources", "collect_sources",
-    "evaluate_evidence", "pii_scrub", "extract_facts", "detect_schema_gaps",
-    "analyze_dimensions", "review_claims", "execute_rework",
-    "prepare_human_intervention", "write_report", "final_review",
+    "evidence_extraction", "evaluate_evidence", "pii_scrub", "extract_facts",
+    "detect_schema_gaps", "coverage_critic", "execute_rework",
+    "analyze_dimensions", "review_claims", "reflect_on_review",
+    "prepare_human_intervention", "write_report_v2", "final_review",
     "export_report", "compute_metrics",
 ]
 
@@ -173,12 +202,12 @@ def render_project_workspace_page(run_id: Optional[str] = None):
     # vNext-P0: Support navigation from AnalysisFlow deliverables → Deliverables tab
     default_tab = st.session_state.pop("pw_active_tab", "Overview")
     TAB_INDEX_MAP = {
-        "Overview": 0, "Workflow": 1, "Review Center": 2,
-        "Deliverables": 3, "Audit": 4,
+        "Overview": 0, "Workflow": 1,
+        "Deliverables": 2, "Audit": 3,
     }
     tab_idx = TAB_INDEX_MAP.get(default_tab, 0)
-    tab_overview, tab_workflow, tab_human_review, tab_deliverables, tab_audit = st.tabs([
-        "Overview", "Workflow", "Review Center", "Deliverables", "Audit"
+    tab_overview, tab_workflow, tab_deliverables, tab_audit = st.tabs([
+        "Overview", "Workflow", "Deliverables", "Audit"
     ])
 
     with tab_overview:
@@ -428,14 +457,6 @@ def render_project_workspace_page(run_id: Optional[str] = None):
         else:
             st.info("No run yet. Start an analysis run first from the Overview tab.")
 
-    with tab_human_review:
-        st.subheader("Human Review")
-        if active_run_id:
-            st.caption(f"Viewing interventions for active run: `{active_run_id}`")
-            render_human_interventions(active_run_id, compact=True)
-        else:
-            st.info("No run yet.")
-
     with tab_deliverables:
         st.subheader("Deliverables")
         if active_run_id:
@@ -465,49 +486,13 @@ def render_project_workspace_page(run_id: Optional[str] = None):
                         partial = qs_data.get("partial_products", 0) if isinstance(qs_data, dict) else 0
                         if insufficient > 0:
                             st.warning(f"⚠ 分析流程已完成，但 {insufficient} 个产品存在证据覆盖不足。报告结果应谨慎使用。")
-                            st.caption("→ 请前往 Review Center 查看详情")
                         elif partial > 0:
                             st.info(f"分析流程已完成，但 {partial} 个产品证据覆盖不完整。结果仅供参考。")
                         else:
                             st.success("✅ 分析流程已完成，报告已就绪。")
                     
                     if st.button("View Report", key=f"ws_deliv_viewreport_{active_run_id}", type="primary"):
-                        st.session_state["pw_show_report"] = True
-                        st.rerun()
-                    
-                    # Render report content if requested
-                    if st.session_state.get("pw_show_report"):
-                        st.divider()
-                        st.markdown("### 📄 Full Report")
-                        if report_content:
-                            st.markdown(report_content)
-                        elif html_path:
-                            # Show HTML report in iframe if file exists; fallback to markdown
-                            try:
-                                probe_url = f"{API_BASE}/api/runs/{active_run_id}/report/html"
-                                probe_resp = requests.head(probe_url, timeout=5, allow_redirects=True)
-                                html_available = probe_resp.status_code == 200
-                            except Exception:
-                                html_available = False
-
-                            if html_available:
-                                st.info(f"报告已生成为 HTML 文件: `{html_path}`")
-                                components.html(
-                                    f'<iframe src="{probe_url}" width="100%" height="600"></iframe>',
-                                    height=650,
-                                    scrolling=True,
-                                )
-                            elif report_content:
-                                st.markdown("### 📄 报告内容 (Markdown)")
-                                st.markdown(report_content)
-                                st.caption(
-                                    f"HTML 文件未找到 (`{html_path}`)。"
-                                    f"请运行 `python scripts/generate_html_report.py --run-id {active_run_id}` 重新生成。"
-                                )
-                            else:
-                                st.warning("报告内容为空且 HTML 文件未找到。")
-                        else:
-                            st.info("报告内容为空或尚未生成。")
+                        goto_page("分析报告")
                 elif run_status == "failed":
                     st.error(f"Run failed. No report content available.")
                 else:
@@ -619,15 +604,22 @@ def render_project_workspace_page(run_id: Optional[str] = None):
                         for section in sections:
                             title = section.get("section_title", "Unknown")
                             section_id = section.get("section_id", "")
-                            content = section.get("content_markdown", "")
-                            word_count = len(content.split()) if content else 0
-                            claim_ids = section.get("claim_ids", [])
-                            cited_claims = section.get("cited_claims", [])
-                            cited_count = len(cited_claims) if cited_claims is not None else 0
-                            if cited_count == 0 and claim_ids:
-                                cited_count = len(claim_ids)
+                            # v2 has word_count field directly; v1 computes from content
+                            word_count = section.get("word_count", 0) or 0
+                            if word_count == 0:
+                                content = section.get("content_markdown", "")
+                                word_count = len(content.split()) if content else 0
+                            # v2: cited_claims_count is a number; v1: cited_claims is a list
+                            cited_count = section.get("cited_claims_count", 0) or 0
+                            if cited_count == 0:
+                                cited_claims = section.get("cited_claims", [])
+                                claim_ids = section.get("claim_ids", [])
+                                cited_count = len(cited_claims) if cited_claims is not None else 0
+                                if cited_count == 0 and claim_ids:
+                                    cited_count = len(claim_ids)
 
                             # Use authoritative status from section data (set by review_section)
+                            # v2 status values: "completed", "pending", "failed", etc.
                             authoritative_status = section.get("status", "")
                             if authoritative_status == "draft_complete":
                                 badge = "🟢 drafted"
@@ -639,8 +631,11 @@ def render_project_workspace_page(run_id: Optional[str] = None):
                                 badge = "✅ reviewed"
                             elif authoritative_status in ("failed", "error"):
                                 badge = "🔴 failed"
+                            elif authoritative_status == "completed":
+                                badge = "🟢 drafted"  # v2 uses "completed" for done sections
+                            elif authoritative_status == "drafted":
+                                badge = "🟢 drafted"
                             else:
-                                # Fallback to word count heuristic only if status is missing
                                 if word_count > 0:
                                     badge = "🟢 drafted"
                                 else:
@@ -718,8 +713,11 @@ def render_project_workspace_page(run_id: Optional[str] = None):
                         st.metric("❌ Failed", failed_llm if failed_llm > 0 else "-")
                     with llm_col4:
                         st.metric("⚡ Fallback", fallback_llm if fallback_llm > 0 else "-")
-            else:
-                st.info("No trace records yet. Start or refresh a run.")
+
+            # Prominent shortcut to full trace view
+            if st.button("🔍 查看完整 Trace 记录（Prompt / Token / 决策）", key=f"ws_audit_full_trace_{active_run_id}", use_container_width=True):
+                goto_page("Trace & Audit")
+            st.caption("包含每次 LLM 调用的完整 Prompt、输入、输出、Token 消耗及决策摘要")
             
             st.divider()
             
@@ -775,16 +773,13 @@ def render_project_workspace_page(run_id: Optional[str] = None):
             
             # Navigation buttons
             st.markdown("**🔗 Open Full Pages**")
-            col_btn1, col_btn2, col_btn3 = st.columns(3)
+            col_btn1, col_btn2 = st.columns(2)
             with col_btn1:
                 if st.button("🔍 Full TraceAudit", key=f"ws_audit_trace_{active_run_id}", use_container_width=True):
                     goto_page("Trace & Audit")
             with col_btn2:
                 if st.button("🔄 DAG Execution", key=f"ws_audit_dag_{active_run_id}", use_container_width=True):
                     goto_page("DAG 执行")
-            with col_btn3:
-                if st.button("⚠️ Review Center", key=f"ws_audit_humanreview_{active_run_id}", use_container_width=True):
-                    goto_page("Review Center")
         else:
             st.info("No active run. Start an analysis to see traces.")
 
