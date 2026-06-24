@@ -528,6 +528,33 @@ DEEP_REPORT_OUTLINE = [
         "product_cards": True,
         "schema_keys": ["function_tree", "pricing_model", "user_persona"],
     },
+    # ── P0-Fix: Add mandatory decision-oriented sections to default outline ─────────
+    # These are also added by _extend_outline_with_schema_sections, but putting them
+    # here ensures they're present even in the fallback path (LLM failed, schema missing).
+    {
+        "slug": "competitor_selection_logic",
+        "title": "竞品选择逻辑",
+        "type": "chapter",
+        "min_words": 200,
+        "target_words": 400,
+        "purpose": "分析本报告纳入/排除各产品的依据与标准",
+    },
+    {
+        "slug": "market_positioning",
+        "title": "市场定位图",
+        "type": "chapter",
+        "min_words": 300,
+        "target_words": 500,
+        "purpose": "各产品在功能定位、目标用户、定价层次上的二维定位对比",
+    },
+    {
+        "slug": "competitor_profiles",
+        "title": "竞品画像",
+        "type": "chapter",
+        "min_words": 200,
+        "target_words": 400,
+        "purpose": "每个主要竞品的发展历程、核心定位、目标用户与差异化优势",
+    },
     # ── Cross-Schema ─────────────────────────────────────────────────────────
     {
         "slug": "swot_analysis",
@@ -564,6 +591,24 @@ DEEP_REPORT_OUTLINE = [
         "min_words": 300,
         "target_words": 500,
         "schema_keys": ["function_tree", "pricing_model", "user_persona"],
+    },
+    {
+        "slug": "product_risks",
+        "title": "选这个产品有什么风险",
+        "type": "chapter",
+        "is_structured": True,
+        "min_words": 500,
+        "target_words": 800,
+        "purpose": "分析各产品实际使用中可能遇到的风险",
+    },
+    {
+        "slug": "report_confidence",
+        "title": "本报告底气有多足",
+        "type": "chapter",
+        "is_structured": True,
+        "min_words": 400,
+        "target_words": 600,
+        "purpose": "评估报告结论可信度，帮助决策者正确使用报告",
     },
     {
         "slug": "evidence_appendix",
