@@ -222,6 +222,28 @@ class RunRepository:
                 (status, current_node, error_message, started_at, completed_at, run_id),
             )
 
+    def save_workflow_state(self, run_id: str, state: dict[str, Any]) -> None:
+        """Save the full workflow state for a paused run (e.g., outline confirmation gate)."""
+        state_json = json.dumps(state, ensure_ascii=False, default=str)
+        with transaction() as conn:
+            conn.execute(
+                "UPDATE runs SET workflow_state_json = ?, updated_at = datetime('now') WHERE run_id = ?",
+                (state_json, run_id),
+            )
+
+    def load_workflow_state(self, run_id: str) -> dict[str, Any] | None:
+        """Load the saved workflow state for a paused run."""
+        with transaction() as conn:
+            row = conn.execute(
+                "SELECT workflow_state_json FROM runs WHERE run_id = ?", (run_id,),
+            ).fetchone()
+        if not row or not row[0]:
+            return None
+        try:
+            return json.loads(row[0])
+        except Exception:
+            return None
+
 
 class ProductRepository:
     def add_product(self, product: dict[str, Any]) -> None:
@@ -347,8 +369,9 @@ class EvidenceRepository:
                     schema_key, snippet, start_offset, end_offset, section_title,
                     confidence, quality_score, quality_json, usable_for_claim,
                     pii_masked, evidence_type, created_at,
-                    trust_tier, source_type
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    trust_tier, source_type,
+                    rework_iteration, rework_reason
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     evidence["evidence_id"], run_id, evidence["source_id"], evidence["snapshot_id"],
@@ -362,6 +385,9 @@ class EvidenceRepository:
                     evidence["created_at"],
                     evidence.get("trust_tier", "medium"),
                     evidence.get("source_type", "web_page"),
+                    # P1-Redesign (2026-06-18): rework attribution
+                    int(evidence.get("rework_iteration", 0) or 0),
+                    str(evidence.get("rework_reason", "") or ""),
                 ),
             )
 
@@ -512,9 +538,11 @@ class ClaimRepository:
                 """,
                 (
                     claim["claim_id"], claim["run_id"], resolved_pid, claim["dimension"],
-                    claim["claim_text"], claim["claim_type"], json.dumps(claim.get("fact_ids", [])),
-                    json.dumps(claim.get("evidence_ids", [])), claim["confidence"], claim["risk_level"],
-                    claim.get("support_level"), claim["review_status"], claim.get("signed_claim_id"),
+                    claim["claim_text"], claim.get("claim_type", "fact"),
+                    json.dumps(claim.get("fact_ids", [])),
+                    json.dumps(claim.get("evidence_ids", [])),
+                    claim.get("confidence"), claim.get("risk_level", "medium"),
+                    claim.get("support_level", "high"), claim["review_status"], claim.get("signed_claim_id"),
                     claim["created_by_agent"], claim["created_at"], claim["updated_at"],
                 ),
             )
@@ -1004,6 +1032,30 @@ class ReportRepository:
                         result["content_markdown"] = candidates[0][1].read_text(encoding="utf-8")
                     except Exception:
                         pass
+
+        # P0-v5 Fix: Also load figures and tables from the JSON sidecar file.
+        # When deep_report.py runs, it writes report_{run_id}_v2.json with figures/tables.
+        # But get_report only reads from DB (which has empty figures/tables columns).
+        # Without this, the report viewer can't render SWOT cards because report_data["figures"]
+        # is empty — even though the markdown has been regenerated with the fix.
+        from pathlib import Path
+        project_root = Path(__file__).parent.parent.parent.parent
+        reports_dir = project_root / "data" / "reports"
+        if reports_dir.exists():
+            for f in sorted(reports_dir.iterdir()):
+                if f.is_file() and f.name.startswith(f"report_{run_id}_v") and f.suffix == ".json":
+                    try:
+                        json_data = json.loads(f.read_text(encoding="utf-8"))
+                        if "figures" in json_data and not result.get("figures"):
+                            result["figures"] = json_data.get("figures", [])
+                        if "tables" in json_data and not result.get("tables"):
+                            result["tables"] = json_data.get("tables", [])
+                        # If we loaded markdown from .md file but the JSON has a newer version,
+                        # prefer the markdown from the same JSON's version number
+                        json_ver_str = f.name[len(f"report_{run_id}_v"):-5]  # e.g. "v2" from "report_xxx_v2.json"
+                        break
+                    except Exception:
+                        pass
         
         result["quality_summary"] = _safe_parse_json(result.pop("quality_summary_json", None), {})
         spans = []
@@ -1336,18 +1388,26 @@ class WorkflowRepository:
     """Repository for workflow_nodes and workflow_edges tables."""
 
     # Main backbone nodes in order
+    # Full 19-node backbone (matches orchestrator/graph.py node_sequence).
+    # The 3 conditional-loop nodes (evidence_extraction, coverage_critic,
+    # reflect_on_review) MUST be present here so that init_workflow_graph()
+    # pre-creates their rows; otherwise start_node() would silently UPDATE
+    # zero rows and their trace would be missing from workflow_nodes.
     BACKBONE_NODES = [
         "build_task_brief",
         "plan_schema",
         "plan_sources",
         "collect_sources",
+        "evidence_extraction",     # P0-7: split out from collect_sources
         "evaluate_evidence",
         "pii_scrub",
         "extract_facts",
         "detect_schema_gaps",
+        "coverage_critic",         # vNext-P0.3: coverage gate before analyze
+        "execute_rework",
         "analyze_dimensions",
         "review_claims",
-        "execute_rework",
+        "reflect_on_review",       # claims rework reflect loop
         "prepare_human_intervention",
         "write_report_v2",
         "final_review",
@@ -1355,24 +1415,35 @@ class WorkflowRepository:
         "compute_metrics",
     ]
 
-    # Main backbone edges
+    # Main backbone edges (mirrors orchestrator/graph.py)
     BACKBONE_EDGES = [
         ("build_task_brief", "plan_schema"),
         ("plan_schema", "plan_sources"),
         ("plan_sources", "collect_sources"),
-        ("collect_sources", "evaluate_evidence"),
+        ("collect_sources", "evidence_extraction"),  # P0-7: split
+        ("evidence_extraction", "evaluate_evidence"),
         ("evaluate_evidence", "pii_scrub"),
         ("pii_scrub", "extract_facts"),
         ("extract_facts", "detect_schema_gaps"),
-        ("detect_schema_gaps", "analyze_dimensions"),
+        ("detect_schema_gaps", "coverage_critic"),  # vNext-P0.3: coverage gate
+        # coverage_critic routes conditionally:
+        #   insufficient -> execute_rework (loop, capped at MAX_COVERAGE_REWORK_ITERATIONS)
+        #   sufficient/weak-after-cap -> analyze_dimensions
+        ("coverage_critic", "execute_rework"),       # conditional
+        ("coverage_critic", "analyze_dimensions"),   # conditional
+        ("execute_rework", "analyze_dimensions"),    # resume path
         ("analyze_dimensions", "review_claims"),
-        ("review_claims", "execute_rework"),
-        ("execute_rework", "prepare_human_intervention"),
-        # write_report_v2 is the single report node (v1/v2 routing removed; v2 is always used)
-        ("prepare_human_intervention", "write_report_v2"),
+        # review_claims routes conditionally:
+        #   rework needed -> reflect_on_review -> execute_rework (loop)
+        #   no rework -> prepare_human_intervention
+        ("review_claims", "reflect_on_review"),        # conditional
+        ("review_claims", "prepare_human_intervention"),  # conditional
+        ("reflect_on_review", "execute_rework"),       # conditional (with cap)
+        ("reflect_on_review", "prepare_human_intervention"),  # conditional
+        ("prepare_human_intervention", "write_report_v2"),  # Research complete, write report
         ("write_report_v2", "final_review"),
         # final_review routes conditionally:
-        #   rework_required -> write_report_v2 (loop)
+        #   rework_required -> write_report_v2 (loop, capped at MAX_REPORT_REWRITE_ITERATIONS)
         #   approved/exported -> export_report
         ("final_review", "write_report_v2"),  # conditional
         ("final_review", "export_report"),  # conditional
@@ -1450,12 +1521,36 @@ class WorkflowRepository:
         node_name: str,
         input_summary: dict[str, Any] | None = None,
     ) -> None:
-        """Mark a node as running and record input summary."""
+        """Mark a node as running and record input summary.
+
+        Uses UPSERT (INSERT OR IGNORE + UPDATE) so that nodes NOT in the
+        pre-initialized BACKBONE_NODES list (e.g. ``evidence_extraction``,
+        ``coverage_critic``, ``reflect_on_review``) still get a row in
+        ``workflow_nodes`` and their trace is preserved.
+        """
         node_id = f"{run_id}_{node_name}"
         now = _utc_now()
         input_json = json.dumps(input_summary, ensure_ascii=False) if input_summary else None
 
         with transaction() as conn:
+            # Ensure the row exists (idempotent for nodes outside BACKBONE_NODES)
+            conn.execute(
+                """
+                INSERT OR IGNORE INTO workflow_nodes (
+                    node_id, run_id, node_name, node_type, status,
+                    created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    node_id,
+                    run_id,
+                    node_name,
+                    "backbone",
+                    "pending",
+                    now,
+                    now,
+                ),
+            )
             conn.execute(
                 """
                 UPDATE workflow_nodes
@@ -1472,12 +1567,33 @@ class WorkflowRepository:
         output_summary: dict[str, Any] | None = None,
         latency_ms: int = 0,
     ) -> None:
-        """Mark a node as completed and record output summary and latency."""
+        """Mark a node as completed and record output summary and latency.
+
+        UPSERTs the row first so nodes outside the BACKBONE_NODES whitelist
+        (e.g. conditional-loop nodes added later) are still persisted.
+        """
         node_id = f"{run_id}_{node_name}"
         now = _utc_now()
         output_json = json.dumps(output_summary, ensure_ascii=False) if output_summary else None
 
         with transaction() as conn:
+            conn.execute(
+                """
+                INSERT OR IGNORE INTO workflow_nodes (
+                    node_id, run_id, node_name, node_type, status,
+                    created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    node_id,
+                    run_id,
+                    node_name,
+                    "backbone",
+                    "pending",
+                    now,
+                    now,
+                ),
+            )
             conn.execute(
                 """
                 UPDATE workflow_nodes
@@ -1496,12 +1612,32 @@ class WorkflowRepository:
         output_summary: dict[str, Any] | None = None,
         latency_ms: int = 0,
     ) -> None:
-        """Mark a node as failed and record error details."""
+        """Mark a node as failed and record error details.
+
+        UPSERTs the row first so nodes outside BACKBONE_NODES are still recorded.
+        """
         node_id = f"{run_id}_{node_name}"
         now = _utc_now()
         output_json = json.dumps(output_summary, ensure_ascii=False) if output_summary else None
 
         with transaction() as conn:
+            conn.execute(
+                """
+                INSERT OR IGNORE INTO workflow_nodes (
+                    node_id, run_id, node_name, node_type, status,
+                    created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    node_id,
+                    run_id,
+                    node_name,
+                    "backbone",
+                    "pending",
+                    now,
+                    now,
+                ),
+            )
             conn.execute(
                 """
                 UPDATE workflow_nodes
@@ -1510,6 +1646,38 @@ class WorkflowRepository:
                 WHERE node_id = ?
                 """,
                 ("failed", now, now, output_json, latency_ms, error_message, node_id),
+            )
+
+    def patch_node_input_summary(
+        self,
+        run_id: str,
+        node_name: str,
+        enriched_fields: dict[str, Any],
+    ) -> None:
+        """Patch a node's input_summary_json with enriched fields after node completion."""
+        node_id = f"{run_id}_{node_name}"
+        now = _utc_now()
+        # Read current input_summary_json, merge, write back
+        with transaction() as conn:
+            row = conn.execute(
+                "SELECT input_summary_json FROM workflow_nodes WHERE node_id = ?",
+                (node_id,),
+            ).fetchone()
+            if row and row[0]:
+                try:
+                    import json as _json
+                    current = _json.loads(row[0])
+                except Exception:
+                    current = {}
+            else:
+                current = {}
+            for k, v in enriched_fields.items():
+                if k not in current:
+                    current[k] = v
+            merged_json = json.dumps(current, ensure_ascii=False)
+            conn.execute(
+                "UPDATE workflow_nodes SET input_summary_json = ?, updated_at = ? WHERE node_id = ?",
+                (merged_json, now, node_id),
             )
 
     def update_node_status(self, run_id: str, node_name: str, status: str) -> None:
